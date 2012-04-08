@@ -9,7 +9,7 @@ int main(int argc, char *argv[])
 {
 	int i, b;
 	unsigned char buf[32];
-	int fd = open("/dev/urandom", O_RDONLY);
+	int fd = open("/dev/piuio0", O_RDONLY);
 	if (fd < 0) {
 		perror("open");
 		return 1;
@@ -23,9 +23,9 @@ int main(int argc, char *argv[])
 		for (i = 0; i < 32; i++) {
 			for (b = 0; b < 8; b++) {
 				if (buf[i] & (128 >> b))
-					printf("%c", inbits[(i % 2) * 8 + b]);
-				else
 					printf(".");
+				else
+					printf("%c", inbits[(i % 2) * 8 + b]);
 			}
 			if (i % 4 == 1)
 				printf(" ");
