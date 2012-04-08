@@ -3,7 +3,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-static const char inbits[] = "RLCS....rldu.$..";
+static const char inbits[] = "RLCSrldu.....$..";
 
 int main(int argc, char *argv[])
 {
