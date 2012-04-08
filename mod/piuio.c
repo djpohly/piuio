@@ -172,9 +172,11 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 
 out:
 	mutex_unlock(&st->lock);
-	if (rv >= 0)
-		rv = copy_to_user(ubuf, buf, sizeof(buf));
-	return rv;
+	if (rv < 0)
+		return rv;
+	if (copy_to_user(ubuf, buf, sizeof(buf)))
+		return -EFAULT;
+	return sizeof(buf);
 }
 
 /* Writing a packet to /dev/piuioN controls the lights and other outputs */
@@ -198,8 +200,7 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 	}
 
 	/* Save the desired outputs */
-	rv = copy_from_user(st->outputs, ubuf, sz);
-	if (rv) {
+	if (copy_from_user(st->outputs, ubuf, sz)) {
 		rv = -EFAULT;
 		goto out;
 	}
