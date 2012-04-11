@@ -1,0 +1,7 @@
+* Boost input priority - see if it helps?
+* Turn off out_imm in driver
+* Implement ioctl?
+* Get initial button state in SM without generating events
+* Limit button checking to 32 instead of 64?  Or add 32 more joystick buttons.
+* Try batching USB messages, see if it improves timing
+* Look at timing code in SM/oITG sources
