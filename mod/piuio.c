@@ -255,8 +255,6 @@ static int piuio_probe(struct usb_interface *intf,
 
 	st->dev = usb_get_dev(interface_to_usbdev(intf));
 	st->intf = intf;
-	/* XXX For now, send light changes immediately */
-	st->out_imm = 1;
 
 	/* Store a pointer so we can get at the state later */
 	usb_set_intfdata(intf, st);
