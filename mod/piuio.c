@@ -179,7 +179,7 @@ out:
 		return rv;
 	if (copy_to_user(ubuf, buf, sizeof(buf)))
 		return -EFAULT;
-	return sizeof(buf);
+	return sz;
 }
 
 /* Writing a packet to /dev/piuioN controls the lights and other outputs */
@@ -220,7 +220,7 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 			&st->outputs, sizeof(st->outputs), timeout_ms);
 out:
 	mutex_unlock(&st->lock);
-	return rv;
+	return rv ? rv : sz;
 }
 
 /* File operations for /dev/piuioN */
