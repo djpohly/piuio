@@ -38,6 +38,11 @@ module_param(timeout_ms, int, 0644);
 MODULE_PARM_DESC(timeout_ms, "Timeout for PIUIO USB messages in ms"
 		" (default 10)");
 
+static int out_imm = 0;
+module_param(out_imm, bool, 0644);
+MODULE_PARM_DESC(out_imm, "Send outputs immediately rather than batching with"
+		" input (default false)");
+
 
 /* Protocol-specific parameters */
 #define PIUIO_MSG_REQ 0xae
@@ -60,8 +65,6 @@ struct piuio_state {
 	/* Concurrency control */
 	struct mutex lock;
 	struct kref kref;
-	/* Send outputs immediately (1) or batch with next input (0)? */
-	int out_imm;
 	/* Current state of outputs */
 	char outputs[PIUIO_OUTPUT_SZ];
 };
@@ -206,7 +209,7 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 	}
 
 	/* Batching with the next input request?  If so, return now. */
-	if (!st->out_imm)
+	if (!out_imm)
 		goto out;
 
 	/* Otherwise, update the lights right away */
