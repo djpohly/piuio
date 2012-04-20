@@ -187,13 +187,25 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 		size_t sz, loff_t *pofs)
 {
 	struct piuio_state *st;
+	unsigned char buf[PIUIO_OUTPUT_SZ];
 	int rv = 0;
 
 	if (sz != sizeof(st->outputs))
 		return -EINVAL;
+	if (copy_from_user(buf, ubuf, sz))
+		return -EFAULT;
 
 	st = filp->private_data;
 
+	/* Save the desired outputs */
+	memcpy(st->outputs, buf, sz);
+
+	/* Batching with the next input request?  If so, return now. */
+	if (!out_imm)
+		return 0;
+
+	/* XXX Late lock - ignoring race conditions on st->outputs for now for
+	 * performance reasons */
 	mutex_lock(&st->lock);
 
 	/* Error if the device has been closed */
@@ -201,16 +213,6 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 		rv = -ENODEV;
 		goto out;
 	}
-
-	/* Save the desired outputs */
-	if (copy_from_user(st->outputs, ubuf, sz)) {
-		rv = -EFAULT;
-		goto out;
-	}
-
-	/* Batching with the next input request?  If so, return now. */
-	if (!out_imm)
-		goto out;
 
 	/* Otherwise, update the lights right away */
 	rv = usb_control_msg(st->dev, usb_sndctrlpipe(st->dev, 0),
