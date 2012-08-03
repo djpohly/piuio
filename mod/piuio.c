@@ -81,53 +81,6 @@ static void piuio_free(struct kref *kref)
 	kfree(st);
 }
 
-/* Handles open() for /dev/piuioN */
-static int piuio_open(struct inode *inode, struct file *filp)
-{
-	struct usb_interface *intf;
-	struct piuio_state *st;
-	int rv;
-
-	/* Get the corresponding interface and state */
-	intf = usb_find_interface(&piuio_driver, iminor(inode));
-	if (!intf)
-		return -ENODEV;
-	st = usb_get_intfdata(intf);
-	if (!st)
-		return -ENODEV;
-
-	/* Pick up a reference to the interface */
-	kref_get(&st->kref);
-
-	/* Ensure the device isn't suspended while in use */
-	rv = usb_autopm_get_interface(intf);
-	if (rv) {
-		kref_put(&st->kref, piuio_free);
-		return rv;
-	}
-
-	/* Attach our state to the file */
-	filp->private_data = st;
-	return 0;
-}
-
-/* Cleans up after the last close() on a descriptor for /dev/piuioN */
-static int piuio_release(struct inode *inode, struct file *filp)
-{
-	struct piuio_state *st;
-
-	st = filp->private_data;
-	if (st == NULL)
-		return -ENODEV;
-
-	if (st->intf)
-		usb_autopm_put_interface(st->intf);
-
-	/* Drop reference */
-	kref_put(&st->kref, piuio_free);
-	return 0;
-}
-
 /* Reading a packet from /dev/piuioN return the state of all the sensors */
 static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 		loff_t *pofs)
@@ -223,6 +176,53 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 out:
 	mutex_unlock(&st->lock);
 	return rv ? rv : sizeof(st->outputs);
+}
+
+/* Handles open() for /dev/piuioN */
+static int piuio_open(struct inode *inode, struct file *filp)
+{
+	struct usb_interface *intf;
+	struct piuio_state *st;
+	int rv;
+
+	/* Get the corresponding interface and state */
+	intf = usb_find_interface(&piuio_driver, iminor(inode));
+	if (!intf)
+		return -ENODEV;
+	st = usb_get_intfdata(intf);
+	if (!st)
+		return -ENODEV;
+
+	/* Pick up a reference to the interface */
+	kref_get(&st->kref);
+
+	/* Ensure the device isn't suspended while in use */
+	rv = usb_autopm_get_interface(intf);
+	if (rv) {
+		kref_put(&st->kref, piuio_free);
+		return rv;
+	}
+
+	/* Attach our state to the file */
+	filp->private_data = st;
+	return 0;
+}
+
+/* Cleans up after the last close() on a descriptor for /dev/piuioN */
+static int piuio_release(struct inode *inode, struct file *filp)
+{
+	struct piuio_state *st;
+
+	st = filp->private_data;
+	if (st == NULL)
+		return -ENODEV;
+
+	if (st->intf)
+		usb_autopm_put_interface(st->intf);
+
+	/* Drop reference */
+	kref_put(&st->kref, piuio_free);
+	return 0;
 }
 
 /* File operations for /dev/piuioN */
