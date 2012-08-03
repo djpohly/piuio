@@ -179,7 +179,7 @@ out:
 		return rv;
 	if (copy_to_user(ubuf, buf, sizeof(buf)))
 		return -EFAULT;
-	return sz;
+	return sizeof(buf);
 }
 
 /* Writing a packet to /dev/piuioN controls the lights and other outputs */
@@ -192,13 +192,13 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 
 	if (sz != sizeof(st->outputs))
 		return -EINVAL;
-	if (copy_from_user(buf, ubuf, sz))
+	if (copy_from_user(buf, ubuf, sizeof(buf)))
 		return -EFAULT;
 
 	st = filp->private_data;
 
 	/* Save the desired outputs */
-	memcpy(st->outputs, buf, sz);
+	memcpy(st->outputs, buf, sizeof(st->outputs));
 
 	/* Batching with the next input request?  If so, return now. */
 	if (!out_imm)
@@ -222,7 +222,7 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 			&st->outputs, sizeof(st->outputs), timeout_ms);
 out:
 	mutex_unlock(&st->lock);
-	return rv ? rv : sz;
+	return rv ? rv : sizeof(st->outputs);
 }
 
 /* File operations for /dev/piuioN */
