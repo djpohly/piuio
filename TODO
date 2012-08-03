@@ -8,3 +8,4 @@
 * Don't do locking if lights haven't changed?
 * More fine-grained locking on outputs and on intf?
 * Have read operate on a copy of outputs
+* Use byteswapping on constants

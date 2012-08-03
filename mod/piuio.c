@@ -38,7 +38,7 @@ module_param(timeout_ms, int, 0644);
 MODULE_PARM_DESC(timeout_ms, "Timeout for PIUIO USB messages in ms"
 		" (default 10)");
 
-static int out_imm = 0;
+static bool out_imm = 0;
 module_param(out_imm, bool, 0644);
 MODULE_PARM_DESC(out_imm, "Send outputs immediately rather than batching with"
 		" input (default false)");
