@@ -224,6 +224,10 @@ static int piuio_release(struct inode *inode, struct file *filp)
 	if (st == NULL)
 		return -ENODEV;
 
+	/* Reset lights */
+	memset(st->outputs, 0, sizeof(st->outputs));
+	do_piuio_write(filp);
+
 	if (st->intf)
 		usb_autopm_put_interface(st->intf);
 

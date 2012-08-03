@@ -3,7 +3,6 @@
 * Limit button checking to 32 instead of 64?  Or add 32 more joystick buttons.
 * Try batching USB messages, see if it improves timing
 * Use a timeout to send outputs if no input requested within <timeout> ms
-* Reset lights when device is closed
 * Don't call write if lights haven't changed?  Comparing code in LightsState?
 * Don't do locking if lights haven't changed?
 * More fine-grained locking on outputs and on intf?
