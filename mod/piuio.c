@@ -135,13 +135,32 @@ out:
 	return sizeof(buf);
 }
 
+/* Implements the write once the buffer is copied to kernelspace */
+static ssize_t do_piuio_write(struct file *filp)
+{
+	struct piuio_state *st = filp->private_data;
+	int rv;
+
+	/* Error if the device has been closed */
+	if (!st->intf)
+		return -ENODEV;
+
+	/* Otherwise, update the lights right away */
+	rv = usb_control_msg(st->dev, usb_sndctrlpipe(st->dev, 0),
+			PIUIO_MSG_REQ,
+			USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
+			PIUIO_MSG_VAL, PIUIO_MSG_IDX,
+			&st->outputs, sizeof(st->outputs), timeout_ms);
+	return rv ? rv : sizeof(st->outputs);
+}
+
 /* Writing a packet to /dev/piuioN controls the lights and other outputs */
 static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 		size_t sz, loff_t *pofs)
 {
 	struct piuio_state *st;
 	unsigned char buf[PIUIO_OUTPUT_SZ];
-	int rv = 0;
+	int rv;
 
 	if (sz != sizeof(st->outputs))
 		return -EINVAL;
@@ -160,22 +179,10 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 	/* XXX Late lock - ignoring race conditions on st->outputs for now for
 	 * performance reasons */
 	mutex_lock(&st->lock);
-
-	/* Error if the device has been closed */
-	if (!st->intf) {
-		rv = -ENODEV;
-		goto out;
-	}
-
-	/* Otherwise, update the lights right away */
-	rv = usb_control_msg(st->dev, usb_sndctrlpipe(st->dev, 0),
-			PIUIO_MSG_REQ,
-			USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
-			PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-			&st->outputs, sizeof(st->outputs), timeout_ms);
-out:
+	rv = do_piuio_write(filp);
 	mutex_unlock(&st->lock);
-	return rv ? rv : sizeof(st->outputs);
+
+	return rv;
 }
 
 /* Handles open() for /dev/piuioN */
