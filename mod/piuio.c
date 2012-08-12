@@ -225,6 +225,14 @@ out:
 	return rv ? rv : sz;
 }
 
+/* XXX The noop_llseek function was added relatively recently.  Don't
+ *     depend on it being around.
+ */
+static loff_t piuio_llseek(struct file *file, loff_t offset, int origin)
+{
+	return file->f_pos;
+}
+
 /* File operations for /dev/piuioN */
 static const struct file_operations piuio_fops = {
 	.owner =	THIS_MODULE,
@@ -232,7 +240,7 @@ static const struct file_operations piuio_fops = {
 	.write =	piuio_write,
 	.open =		piuio_open,
 	.release =	piuio_release,
-	.llseek =	noop_llseek,
+	.llseek =	piuio_llseek,
 };
 
 /* Class driver, for creating device files */
