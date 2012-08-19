@@ -271,7 +271,7 @@ static int piuio_probe(struct usb_interface *intf,
 	/* Set up state structure */
 	st = kzalloc(sizeof(*st), GFP_KERNEL);
 	if (!st) {
-		err("Failed to allocate state");
+		dev_err(&intf->dev, "Failed to allocate state\n");
 		return -ENOMEM;
 	}
 	kref_init(&st->kref);
@@ -286,7 +286,7 @@ static int piuio_probe(struct usb_interface *intf,
 	/* Register the device */
 	rv = usb_register_dev(intf, &piuio_class);
 	if (rv) {
-		err("Failed to register device");
+		dev_err(&intf->dev, "Failed to register device\n");
 		usb_set_intfdata(intf, NULL);
 		kref_put(&st->kref, piuio_free);
 	}
