@@ -38,10 +38,10 @@ module_param(timeout_ms, int, 0644);
 MODULE_PARM_DESC(timeout_ms, "Timeout for PIUIO USB messages in ms"
 		" (default 10)");
 
-static bool out_imm = 0;
-module_param(out_imm, bool, 0644);
-MODULE_PARM_DESC(out_imm, "Send outputs immediately rather than batching with"
-		" input (default false)");
+static bool batch_output = true;
+module_param(batch_output, bool, 0644);
+MODULE_PARM_DESC(batch_output, "Batch output messages with next input request"
+		" (default true)");
 
 
 /* Protocol-specific parameters */
@@ -173,7 +173,7 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 	memcpy(st->outputs, buf, sizeof(st->outputs));
 
 	/* Batching with the next input request?  If so, return now. */
-	if (!out_imm)
+	if (batch_output)
 		return 0;
 
 	/* XXX Late lock - ignoring race conditions on st->outputs for now for
