@@ -32,6 +32,12 @@ kernel module updates.  This often looks lomething like:
 or similar.
 
 
+PIU IO Internal Work
+------------------------
+
+There is a document called `INNER_WORKINGS.txt` that tells exactly how the PIUIO Works/
+
+
 Tools
 -----
 
@@ -42,3 +48,4 @@ found in the `tools` directory.
 * `outtest`: Read any of the characters [RLDUrldu1234B] from standard input and
   toggle the corresponding outputs.  (Note that this will not happen immediately
   unless you turn the `batch_output` option off.
+* `pump.h`: The bit masks for PIUIO Inputs and Outputs
