@@ -9,6 +9,11 @@ int main(int argc, char *argv[])
 {
 	int i, b;
 	unsigned char buf[32];
+
+	int delay = 100000;
+	if (argc > 1)
+		delay = atol(argv[1]);
+
 	int fd = open("/dev/piuio0", O_RDONLY);
 	if (fd < 0) {
 		perror("open");
@@ -35,7 +40,8 @@ int main(int argc, char *argv[])
 			}
 		}
 		printf("\n");
-		usleep(100000);
+		if (delay)
+			usleep(delay);
 	}
 	return 0;
 }

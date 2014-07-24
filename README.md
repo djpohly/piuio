@@ -38,7 +38,9 @@ Tools
 Two tools are provided for testing I/O through this device.  These tools are
 found in the `tools` directory.
 
-* `intest`: Display input live from the I/O card.
+* `intest`: Display input live from the I/O card.  Takes an optional argument
+  which is the delay in microseconds between requests, or 0 to poll as quickly
+  as possible.  The default is 100000 (0.1s).
 * `outtest`: Read any of the characters [RLDUrldu1234B] from standard input and
   toggle the corresponding outputs.  (Note that this will not happen immediately
   unless you turn the `batch_output` option off.
