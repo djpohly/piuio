@@ -288,10 +288,14 @@ static int piuio_probe(struct usb_interface *intf,
 	/* Register the device */
 	rv = usb_register_dev(intf, &piuio_class);
 	if (rv) {
-		dev_err(&intf->dev, "Failed to register device\n");
-		usb_set_intfdata(intf, NULL);
-		kref_put(&st->kref, state_destroy);
+		dev_err(&intf->dev, "Failed to register USB device\n");
+		goto err_registering_usb;
 	}
+	return rv;
+
+err_registering_usb:
+	usb_set_intfdata(intf, NULL);
+	kref_put(&st->kref, state_destroy);
 	return rv;
 }
 
