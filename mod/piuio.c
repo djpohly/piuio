@@ -317,21 +317,5 @@ static struct usb_driver piuio_driver = {
 	.supports_autosuspend = 1,
 };
 
-/* From 3.3 on, we can replace everthing below with:
- * module_usb_driver(piuio_driver);
- */
-
-/* Register the driver */
-static int __init piuio_init(void)
-{
-	return usb_register(&piuio_driver);
-}
-
-/* Remove the driver */
-static void __exit piuio_exit(void)
-{
-	usb_deregister(&piuio_driver);
-}
-
-module_init(piuio_init);
-module_exit(piuio_exit);
+/* This line requires kernel 3.3 or higher */
+module_usb_driver(piuio_driver);
