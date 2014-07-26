@@ -97,7 +97,7 @@ static void state_destroy(struct kref *kref)
 }
 
 
-/* Reading a packet from /dev/piuioN return the state of all the sensors */
+/* Reading a packet from /dev/piuioN returns the state of all the sensors */
 static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 		loff_t *pofs)
 {
@@ -113,7 +113,7 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 
 	mutex_lock(&st->lock);
 
-	/* Error if the device has been closed */
+	/* Error if the device has been disconnected */
 	if (!st->intf) {
 		rv = -ENODEV;
 		goto out;
@@ -151,7 +151,7 @@ out:
 	return sizeof(buf);
 }
 
-/* Implements the write once the buffer is copied to kernelspace */
+/* Performs the write after the buffer is copied to kernelspace */
 static ssize_t do_piuio_write(struct file *filp)
 {
 	struct piuio_state *st = filp->private_data;
@@ -312,6 +312,7 @@ static void piuio_disconnect(struct usb_interface *intf)
 	usb_set_intfdata(intf, NULL);
 	usb_deregister_dev(intf, &piuio_class);
 
+	/* Signal to any stragglers that the device is gone */
 	mutex_lock(&st->lock);
 	st->intf = NULL;
 	mutex_unlock(&st->lock);
