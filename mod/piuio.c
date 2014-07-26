@@ -72,14 +72,30 @@ struct piuio_state {
 static struct usb_driver piuio_driver;
 
 
-/* Auxiliary function to clean up interface state */
-static void piuio_free(struct kref *kref)
+/* Auxiliary functions to create and clean up interface state */
+static struct piuio_state *state_create(struct usb_interface *intf)
+{
+	struct piuio_state *st = kzalloc(sizeof(*st), GFP_KERNEL);
+	if (!st)
+		return NULL;
+
+	kref_init(&st->kref);
+	mutex_init(&st->lock);
+
+	st->dev = usb_get_dev(interface_to_usbdev(intf));
+	st->intf = intf;
+
+	return st;
+}
+
+static void state_destroy(struct kref *kref)
 {
 	struct piuio_state *st = container_of(kref, struct piuio_state, kref);
 
 	usb_put_dev(st->dev);
 	kfree(st);
 }
+
 
 /* Reading a packet from /dev/piuioN return the state of all the sensors */
 static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
@@ -206,7 +222,7 @@ static int piuio_open(struct inode *inode, struct file *filp)
 	/* Ensure the device isn't suspended while in use */
 	rv = usb_autopm_get_interface(intf);
 	if (rv) {
-		kref_put(&st->kref, piuio_free);
+		kref_put(&st->kref, state_destroy);
 		return rv;
 	}
 
@@ -232,7 +248,7 @@ static int piuio_release(struct inode *inode, struct file *filp)
 		usb_autopm_put_interface(st->intf);
 
 	/* Drop reference */
-	kref_put(&st->kref, piuio_free);
+	kref_put(&st->kref, state_destroy);
 	return 0;
 }
 
@@ -269,16 +285,11 @@ static int piuio_probe(struct usb_interface *intf,
 	int rv;
 
 	/* Set up state structure */
-	st = kzalloc(sizeof(*st), GFP_KERNEL);
+	st = state_create(intf);
 	if (!st) {
 		dev_err(&intf->dev, "Failed to allocate state\n");
 		return -ENOMEM;
 	}
-	kref_init(&st->kref);
-	mutex_init(&st->lock);
-
-	st->dev = usb_get_dev(interface_to_usbdev(intf));
-	st->intf = intf;
 
 	/* Store a pointer so we can get at the state later */
 	usb_set_intfdata(intf, st);
@@ -288,7 +299,7 @@ static int piuio_probe(struct usb_interface *intf,
 	if (rv) {
 		dev_err(&intf->dev, "Failed to register device\n");
 		usb_set_intfdata(intf, NULL);
-		kref_put(&st->kref, piuio_free);
+		kref_put(&st->kref, state_destroy);
 	}
 	return rv;
 }
@@ -305,7 +316,7 @@ static void piuio_disconnect(struct usb_interface *intf)
 	st->intf = NULL;
 	mutex_unlock(&st->lock);
 
-	kref_put(&st->kref, piuio_free);
+	kref_put(&st->kref, state_destroy);
 }
 
 /* Device driver handlers */
