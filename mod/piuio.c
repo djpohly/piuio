@@ -88,19 +88,29 @@ static struct piuio_state *state_create(struct usb_interface *intf)
 	if (!st)
 		return NULL;
 
-	kref_init(&st->kref);
-	mutex_init(&st->lock);
-
+	/* Hold a reference to the USB device */
 	st->dev = usb_get_dev(interface_to_usbdev(intf));
 	st->intf = intf;
+
+	/* Construct a physical path for the input device */
+	usb_make_path(st->dev, st->input_phys, sizeof(st->input_phys));
+	strlcat(st->input_phys, "/input0", sizeof(st->input_phys));
+
+	/* Initialize synchro primitives */
+	mutex_init(&st->lock);
+	kref_init(&st->kref);
 
 	return st;
 }
 
+/* Run when kref hits 0 for the driver state; opposite of state_create */
 static void state_destroy(struct kref *kref)
 {
 	struct piuio_state *st = container_of(kref, struct piuio_state, kref);
 
+	mutex_destroy(&st->lock);
+
+	/* Drop our reference to the USB device */
 	usb_put_dev(st->dev);
 	kfree(st);
 }
@@ -300,7 +310,6 @@ static int piuio_probe(struct usb_interface *intf,
 		const struct usb_device_id *id)
 {
 	struct piuio_state *st;
-	struct usb_device *dev = interface_to_usbdev(intf);
 	struct input_polled_dev *ipdev;
 	struct input_dev *idev;
 	int i;
@@ -329,12 +338,8 @@ static int piuio_probe(struct usb_interface *intf,
 	/* Initialize the underlying input device */
 	idev = ipdev->input;
 	idev->name = "PIUIO input";
-
-	usb_make_path(dev, st->input_phys, sizeof(st->input_phys));
-	strlcat(st->input_phys, "/input0", sizeof(st->input_phys));
 	idev->phys = st->input_phys;
-
-	usb_to_input_id(dev, &idev->id);
+	usb_to_input_id(st->dev, &idev->id);
 	idev->dev.parent = &intf->dev;
 
 	/* Configure our buttons */
