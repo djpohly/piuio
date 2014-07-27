@@ -68,12 +68,18 @@ struct piuio_state {
 	/* USB device and interface */
 	struct usb_device *dev;	
 	struct usb_interface *intf;
+
 	/* Input device */
 	struct input_polled_dev *ipdev;
 	char input_phys[64];
-	/* Concurrency control */
+
+	/* Protects intf and outputs */
 	struct mutex lock;
+
+	/* Refcount for state struct: incremented by probe and open, decremented
+	 * by release and disconnect */
 	struct kref kref;
+
 	/* Current state of outputs */
 	u8 outputs[PIUIO_OUTPUT_SZ];
 };
