@@ -63,7 +63,7 @@ MODULE_PARM_DESC(batch_output, "Batch output messages with next input request"
 #define PIUIO_MULTIPLEX 4
 
 
-/* Represents the current state of an interface */
+/* Represents the current state of a device */
 struct piuio_state {
 	/* USB device and interface */
 	struct usb_device *dev;	
@@ -76,18 +76,17 @@ struct piuio_state {
 	/* Protects intf and outputs */
 	struct mutex lock;
 
-	/* Refcount for state struct: incremented by probe and open, decremented
-	 * by release and disconnect */
+	/* Refcount for state struct, incremented by probe and open, decremented
+	 * by release and disconnect; needed because last release may happen
+	 * after disconnect */
 	struct kref kref;
 
 	/* Current state of outputs */
 	u8 outputs[PIUIO_OUTPUT_SZ];
 };
 
-static struct usb_driver piuio_driver;
 
-
-/* Auxiliary functions to create and clean up interface state */
+/* Allocates driver state and initializes fields */
 static struct piuio_state *state_create(struct usb_interface *intf)
 {
 	struct piuio_state *st = kzalloc(sizeof(*st), GFP_KERNEL);
@@ -109,7 +108,7 @@ static struct piuio_state *state_create(struct usb_interface *intf)
 	return st;
 }
 
-/* Run when kref hits 0 for the driver state; opposite of state_create */
+/* Cleans up and frees driver state; opposite of state_create */
 static void state_destroy(struct kref *kref)
 {
 	struct piuio_state *st = container_of(kref, struct piuio_state, kref);
@@ -120,6 +119,10 @@ static void state_destroy(struct kref *kref)
 	usb_put_dev(st->dev);
 	kfree(st);
 }
+
+
+/* Forward-declared for use in functions */
+static struct usb_driver piuio_driver;
 
 
 /* Reading a packet from /dev/piuioN returns the state of all the sensors */
