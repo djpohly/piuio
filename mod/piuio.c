@@ -38,13 +38,11 @@ MODULE_DEVICE_TABLE(usb, piuio_ids);
 /* Module parameters */
 static int timeout_ms = 10;
 module_param(timeout_ms, int, 0644);
-MODULE_PARM_DESC(timeout_ms, "Timeout for PIUIO USB messages in ms"
-		" (default 10)");
+MODULE_PARM_DESC(timeout_ms, "Timeout for PIUIO USB messages in ms");
 
 static bool batch_output = true;
 module_param(batch_output, bool, 0644);
-MODULE_PARM_DESC(batch_output, "Batch output messages with next input request"
-		" (default true)");
+MODULE_PARM_DESC(batch_output, "Batch output messages with next input request");
 
 
 /* Protocol-specific parameters */
