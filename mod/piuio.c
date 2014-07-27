@@ -13,6 +13,9 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/usb.h>
+#include <linux/input.h>
+#include <linux/input-polldev.h>
+#include <linux/usb/input.h>
 #include <linux/slab.h>
 #include <linux/kref.h>
 #include <linux/uaccess.h>
@@ -65,6 +68,9 @@ struct piuio_state {
 	/* USB device and interface */
 	struct usb_device *dev;	
 	struct usb_interface *intf;
+	/* Input device */
+	struct input_polled_dev *ipdev;
+	char phys[64];
 	/* Concurrency control */
 	struct mutex lock;
 	struct kref kref;
@@ -270,13 +276,35 @@ static struct usb_class_driver piuio_class = {
 	.fops =		&piuio_fops,
 };
 
+static void piuio_input_poll(struct input_polled_dev *ipdev)
+{
+	// XXX Actually poll the input here :)
+}
+
+/* Utility function: use the joystick buttons first, then the extra "trigger
+ * happy" button range. */
+static int keycode_for_pin(int pin)
+{
+	if (pin < 0x10)
+		return BTN_JOYSTICK + pin;
+	pin -= 0x10;
+	if (pin < 0x40)
+		return BTN_TRIGGER_HAPPY + pin;
+
+	return -1;
+}
+
 
 /* Set up a device being connected to this driver */
 static int piuio_probe(struct usb_interface *intf,
 		const struct usb_device_id *id)
 {
 	struct piuio_state *st;
-	int rv;
+	struct usb_device *dev = interface_to_usbdev(intf);
+	struct input_polled_dev *ipdev;
+	struct input_dev *idev;
+	int i;
+	int rv = -ENOMEM;
 
 	/* Set up state structure */
 	st = state_create(intf);
@@ -285,19 +313,67 @@ static int piuio_probe(struct usb_interface *intf,
 		return -ENOMEM;
 	}
 
-	/* Store a pointer so we can get at the state later */
-	usb_set_intfdata(intf, st);
+	/* Allocate and initialize the polled input device */
+	ipdev = input_allocate_polled_device();
+	if (!ipdev) {
+		dev_err(&intf->dev, "Failed to allocate polled input device\n");
+		goto err_allocating_ipdev;
+	}
+	st->ipdev = ipdev;
 
-	/* Register the device */
+	ipdev->private = st;
+	ipdev->poll = piuio_input_poll;
+	/* XXX Testing value - reduce this! */
+	ipdev->poll_interval = 1000;
+
+	/* Initialize the underlying input device */
+	idev = ipdev->input;
+	idev->name = "PIUIO input";
+
+	usb_make_path(dev, st->phys, sizeof(st->phys));
+	strlcat(st->phys, "/input0", sizeof(st->phys));
+	idev->phys = st->phys;
+
+	usb_to_input_id(dev, &idev->id);
+	idev->dev.parent = &intf->dev;
+
+	/* Configure our buttons */
+	set_bit(EV_KEY, idev->evbit);
+	for (i = 0; i < PIUIO_NUM_INPUTS; i++)
+		set_bit(keycode_for_pin(i), idev->keybit);
+
+	/* HACK: Buttons are sufficient to trigger a /dev/input/js* device, but
+	 * for systemd (and consequently udev and Xorg) to consider us a
+	 * joystick, we have to have a set of XY absolute axes. */
+	set_bit(EV_ABS, idev->evbit);
+	set_bit(ABS_X, idev->absbit);
+	set_bit(ABS_Y, idev->absbit);
+	input_set_abs_params(idev, ABS_X, 0, 0, 0, 0);
+	input_set_abs_params(idev, ABS_Y, 0, 0, 0, 0);
+
+	/* Register the polled input device */
+	rv = input_register_polled_device(ipdev);
+	if (rv) {
+		dev_err(&intf->dev, "Failed to register polled input device\n");
+		goto err_registering_input;
+	}
+
+	/* Register the USB device */
+	usb_set_intfdata(intf, st);
 	rv = usb_register_dev(intf, &piuio_class);
 	if (rv) {
 		dev_err(&intf->dev, "Failed to register USB device\n");
 		goto err_registering_usb;
 	}
+
 	return rv;
 
 err_registering_usb:
 	usb_set_intfdata(intf, NULL);
+	input_unregister_polled_device(ipdev);
+err_registering_input:
+	input_free_polled_device(ipdev);
+err_allocating_ipdev:
 	kref_put(&st->kref, state_destroy);
 	return rv;
 }
@@ -309,6 +385,8 @@ static void piuio_disconnect(struct usb_interface *intf)
 
 	usb_set_intfdata(intf, NULL);
 	usb_deregister_dev(intf, &piuio_class);
+	input_unregister_polled_device(st->ipdev);
+	input_free_polled_device(st->ipdev);
 
 	/* Signal to any stragglers that the device is gone */
 	mutex_lock(&st->lock);
