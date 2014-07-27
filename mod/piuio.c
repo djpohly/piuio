@@ -70,12 +70,12 @@ struct piuio_state {
 	struct usb_interface *intf;
 	/* Input device */
 	struct input_polled_dev *ipdev;
-	char phys[64];
+	char input_phys[64];
 	/* Concurrency control */
 	struct mutex lock;
 	struct kref kref;
 	/* Current state of outputs */
-	char outputs[PIUIO_OUTPUT_SZ];
+	u8 outputs[PIUIO_OUTPUT_SZ];
 };
 
 static struct usb_driver piuio_driver;
@@ -330,9 +330,9 @@ static int piuio_probe(struct usb_interface *intf,
 	idev = ipdev->input;
 	idev->name = "PIUIO input";
 
-	usb_make_path(dev, st->phys, sizeof(st->phys));
-	strlcat(st->phys, "/input0", sizeof(st->phys));
-	idev->phys = st->phys;
+	usb_make_path(dev, st->input_phys, sizeof(st->input_phys));
+	strlcat(st->input_phys, "/input0", sizeof(st->input_phys));
+	idev->phys = st->input_phys;
 
 	usb_to_input_id(dev, &idev->id);
 	idev->dev.parent = &intf->dev;
