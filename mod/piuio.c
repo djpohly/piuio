@@ -307,7 +307,7 @@ static int keycode_for_pin(int pin)
 	if (pin < 0x40)
 		return BTN_TRIGGER_HAPPY + pin;
 
-	return -1;
+	return KEY_RESERVED;
 }
 
 
