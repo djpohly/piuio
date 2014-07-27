@@ -50,11 +50,14 @@ MODULE_PARM_DESC(batch_output, "Batch output messages with next input request"
 #define PIUIO_MSG_IDX 0
 
 /* Size of input and output packets */
-#define PIUIO_INPUT_SZ 8
-#define PIUIO_OUTPUT_SZ 8
+#define PIUIO_NUM_INPUTS 64
+#define PIUIO_INPUT_SZ ((PIUIO_NUM_INPUTS + 7) / 8)
+#define PIUIO_NUM_OUTPUTS 64
+#define PIUIO_OUTPUT_SZ ((PIUIO_NUM_OUTPUTS + 7) / 8)
+
 /* XXX: The piuio_read code currently expects this to be 4.  Until we know more
  * about how the device works, it will have to stay that way. */
-#define PIUIO_NUM_INPUTS 4
+#define PIUIO_MULTIPLEX 4
 
 
 /* Represents the current state of an interface */
@@ -102,7 +105,7 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 		loff_t *pofs)
 {
 	struct piuio_state *st;
-	char buf[PIUIO_INPUT_SZ * PIUIO_NUM_INPUTS];
+	char buf[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
 	int i;
 	int rv = 0;
 
@@ -119,7 +122,7 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 		goto out;
 	}
 
-	for (i = 0; i < PIUIO_NUM_INPUTS; i++) {
+	for (i = 0; i < PIUIO_MULTIPLEX; i++) {
 		/* First select which set of inputs to get */
 		st->outputs[0] = (st->outputs[0] & ~3) | i;
 		st->outputs[2] = (st->outputs[2] & ~3) | i;
