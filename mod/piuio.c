@@ -295,13 +295,8 @@ static struct usb_class_driver piuio_class = {
 	.fops =		&piuio_fops,
 };
 
-static void piuio_input_poll(struct input_polled_dev *ipdev)
-{
-	// XXX Actually poll the input here :)
-}
 
-/* Utility function: use the joystick buttons first, then the extra "trigger
- * happy" button range. */
+/* Use the joystick buttons first, then the extra "trigger happy" range. */
 static int keycode_for_pin(int pin)
 {
 	if (pin < 0x10)
@@ -311,6 +306,11 @@ static int keycode_for_pin(int pin)
 		return BTN_TRIGGER_HAPPY + pin;
 
 	return KEY_RESERVED;
+}
+
+static void piuio_input_poll(struct input_polled_dev *ipdev)
+{
+	// XXX Actually poll the input here :)
 }
 
 
