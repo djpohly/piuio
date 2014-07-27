@@ -44,6 +44,10 @@ static bool batch_output = true;
 module_param(batch_output, bool, 0644);
 MODULE_PARM_DESC(batch_output, "Batch output messages with next input request");
 
+static unsigned int poll_interval_ms = 3;
+module_param(poll_interval_ms, uint, 0644);
+MODULE_PARM_DESC(poll_interval_ms, "Input device polling interval");
+
 
 /* Protocol-specific parameters */
 #define PIUIO_MSG_REQ 0xae
@@ -339,8 +343,7 @@ static int piuio_probe(struct usb_interface *intf,
 
 	ipdev->private = st;
 	ipdev->poll = piuio_input_poll;
-	/* XXX Testing value - reduce this! */
-	ipdev->poll_interval = 1000;
+	ipdev->poll_interval = poll_interval_ms;
 
 	/* Initialize the underlying input device */
 	idev = ipdev->input;
