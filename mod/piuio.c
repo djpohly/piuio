@@ -23,6 +23,22 @@
 #include <linux/errno.h>
 
 
+/* Protocol-specific parameters */
+#define PIUIO_MSG_REQ 0xae
+#define PIUIO_MSG_VAL 0
+#define PIUIO_MSG_IDX 0
+
+/* Size of input and output packets */
+#define PIUIO_NUM_INPUTS 64
+#define PIUIO_INPUT_SZ ((PIUIO_NUM_INPUTS + 7) / 8)
+#define PIUIO_NUM_OUTPUTS 64
+#define PIUIO_OUTPUT_SZ ((PIUIO_NUM_OUTPUTS + 7) / 8)
+
+/* XXX: The piuio_read code currently expects this to be 4.  Until we know more
+ * about how the device works, it will have to stay that way. */
+#define PIUIO_MULTIPLEX 4
+
+
 /* Module and driver info */
 MODULE_AUTHOR("Devin J. Pohly");
 MODULE_DESCRIPTION("PIUIO input/output driver");
@@ -47,22 +63,6 @@ MODULE_PARM_DESC(batch_output, "Batch output messages with next input request");
 static unsigned int poll_interval_ms = 3;
 module_param(poll_interval_ms, uint, 0644);
 MODULE_PARM_DESC(poll_interval_ms, "Input device polling interval");
-
-
-/* Protocol-specific parameters */
-#define PIUIO_MSG_REQ 0xae
-#define PIUIO_MSG_VAL 0
-#define PIUIO_MSG_IDX 0
-
-/* Size of input and output packets */
-#define PIUIO_NUM_INPUTS 64
-#define PIUIO_INPUT_SZ ((PIUIO_NUM_INPUTS + 7) / 8)
-#define PIUIO_NUM_OUTPUTS 64
-#define PIUIO_OUTPUT_SZ ((PIUIO_NUM_OUTPUTS + 7) / 8)
-
-/* XXX: The piuio_read code currently expects this to be 4.  Until we know more
- * about how the device works, it will have to stay that way. */
-#define PIUIO_MULTIPLEX 4
 
 
 /* Represents the current state of a device */
