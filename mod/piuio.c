@@ -83,7 +83,8 @@ struct piuio_state {
 	 * after disconnect */
 	struct kref kref;
 
-	/* Current state of outputs */
+	/* Current state of inputs and outputs */
+	u8 inputs[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
 	u8 outputs[PIUIO_OUTPUT_SZ];
 };
 
@@ -128,7 +129,7 @@ static struct usb_driver piuio_driver;
 
 
 /* Perform the read in kernelspace.  Must be called with st->lock held. */
-static ssize_t do_piuio_read(struct piuio_state *st, char *buf)
+static ssize_t do_piuio_read(struct piuio_state *st)
 {
 	int i;
 	int rv;
@@ -154,7 +155,7 @@ static ssize_t do_piuio_read(struct piuio_state *st, char *buf)
 				PIUIO_MSG_REQ,
 				USB_DIR_IN|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
 				PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-				&buf[i * PIUIO_INPUT_SZ], PIUIO_INPUT_SZ,
+				&st->inputs[i * PIUIO_INPUT_SZ], PIUIO_INPUT_SZ,
 				timeout_ms);
 		if (rv < 0)
 			return rv;
@@ -168,23 +169,22 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 		loff_t *pofs)
 {
 	struct piuio_state *st;
-	char buf[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
 	int rv = 0;
 
-	if (sz != sizeof(buf))
+	if (sz != sizeof(st->inputs))
 		return -EINVAL;
 
 	st = filp->private_data;
 
 	mutex_lock(&st->lock);
-	rv = do_piuio_read(st, buf);
+	rv = do_piuio_read(st);
 	mutex_unlock(&st->lock);
 
 	if (rv < 0)
 		return rv;
-	if (copy_to_user(ubuf, buf, sizeof(buf)))
+	if (copy_to_user(ubuf, st->inputs, sizeof(st->inputs)))
 		return -EFAULT;
-	return sizeof(buf);
+	return sizeof(st->inputs);
 }
 
 /* Performs the write after the buffer is copied to kernelspace */
