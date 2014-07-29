@@ -75,7 +75,7 @@ struct piuio_state {
 	struct input_polled_dev *ipdev;
 	char input_phys[64];
 
-	/* Protects intf and outputs */
+	/* Protects intf, inputs, and outputs */
 	struct mutex lock;
 
 	/* Refcount for state struct, incremented by probe and open, decremented
@@ -85,6 +85,7 @@ struct piuio_state {
 
 	/* Current state of inputs and outputs */
 	u8 inputs[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
+	u8 last_inputs[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
 	u8 outputs[PIUIO_OUTPUT_SZ];
 };
 
@@ -315,9 +316,65 @@ static int keycode_for_pin(int pin)
 	return KEY_RESERVED;
 }
 
+static void report_key(struct input_polled_dev *ipdev, int pin, int release)
+{
+	struct input_dev *input = ipdev->input;
+
+	input_event(input, EV_MSC, MSC_SCAN, pin + 1);
+	input_report_key(input, keycode_for_pin(pin), !release);
+}
+
+/* Update the device state and generate input events based on the changes */
 static void piuio_input_poll(struct input_polled_dev *ipdev)
 {
-	// XXX Actually poll the input here :)
+	struct piuio_state *st = ipdev->private;
+	u8 inputs[PIUIO_INPUT_SZ];
+	u8 changed[PIUIO_INPUT_SZ];
+	int i, j;
+	int update;
+	int rv;
+
+	mutex_lock(&st->lock);
+
+	/* Keep these around for later reference */
+	memcpy(st->last_inputs, st->inputs, sizeof(st->last_inputs));
+
+	/* Poll the device */
+	rv = do_piuio_read(st);
+	if (rv) {
+		dev_err(&st->intf->dev, "PIUIO read failed in poll: %d\n", rv);
+		return;
+	}
+
+	/* Consolidate the inputs (0 means pressed, so we AND them) */
+	memcpy(inputs, st->inputs, PIUIO_INPUT_SZ);
+	for (i = 1; i < PIUIO_MULTIPLEX; i++)
+		for (j = 0; j < PIUIO_INPUT_SZ; j++)
+			inputs[j] &= st->inputs[i * PIUIO_INPUT_SZ + j];
+
+	/* Consolidate the last inputs and compare them to current */
+	memcpy(changed, st->last_inputs, PIUIO_INPUT_SZ);
+	for (i = 1; i < PIUIO_MULTIPLEX; i++)
+		for (j = 0; j < PIUIO_INPUT_SZ; j++) {
+			changed[j] &= st->last_inputs[i * PIUIO_INPUT_SZ + j];
+			changed[j] ^= inputs[j];
+		}
+
+	/* Done with st->inputs/last_inputs */
+	mutex_unlock(&st->lock);
+
+	/* Find the inputs which have changed state and report them */
+	update = 0;
+	for (i = 0; i < PIUIO_INPUT_SZ; i++)
+		for (j = 0; j < 8 * sizeof(*changed); j++)
+			if (changed[i] & (1 << j)) {
+				update = 1;
+				report_key(ipdev, i * 8 + j, inputs[i] & (1 << j));
+			}
+
+	/* If we reported anything, flush our input events */
+	if (update)
+		input_sync(ipdev->input);
 }
 
 
