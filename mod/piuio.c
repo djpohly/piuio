@@ -341,7 +341,8 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 
 	/* Poll the device */
 	rv = do_piuio_read(st);
-	if (rv) {
+	if (rv < 0) {
+		mutex_unlock(&st->lock);
 		dev_err(&st->intf->dev, "PIUIO read failed in poll: %d\n", rv);
 		return;
 	}
