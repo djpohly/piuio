@@ -188,9 +188,8 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 }
 
 /* Performs the write after the buffer is copied to kernelspace */
-static ssize_t do_piuio_write(struct file *filp)
+static ssize_t do_piuio_write(struct piuio_state *st)
 {
-	struct piuio_state *st = filp->private_data;
 	int rv;
 
 	/* Error if the device has been closed */
@@ -231,7 +230,7 @@ static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
 	/* XXX Late lock - ignoring race conditions on st->outputs for now for
 	 * performance reasons */
 	mutex_lock(&st->lock);
-	rv = do_piuio_write(filp);
+	rv = do_piuio_write(st);
 	mutex_unlock(&st->lock);
 
 	return rv;
@@ -278,7 +277,7 @@ static int piuio_release(struct inode *inode, struct file *filp)
 
 	/* Reset lights */
 	memset(st->outputs, 0, sizeof(st->outputs));
-	do_piuio_write(filp);
+	do_piuio_write(st);
 
 	if (st->intf)
 		usb_autopm_put_interface(st->intf);
