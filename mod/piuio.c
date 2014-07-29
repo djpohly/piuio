@@ -127,27 +127,15 @@ static void state_destroy(struct kref *kref)
 static struct usb_driver piuio_driver;
 
 
-/* Reading a packet from /dev/piuioN returns the state of all the sensors */
-static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
-		loff_t *pofs)
+/* Perform the read in kernelspace.  Must be called with st->lock held. */
+static ssize_t do_piuio_read(struct piuio_state *st, char *buf)
 {
-	struct piuio_state *st;
-	char buf[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
 	int i;
-	int rv = 0;
-
-	if (sz != sizeof(buf))
-		return -EINVAL;
-
-	st = filp->private_data;
-
-	mutex_lock(&st->lock);
+	int rv;
 
 	/* Error if the device has been disconnected */
-	if (!st->intf) {
-		rv = -ENODEV;
-		goto out;
-	}
+	if (!st->intf)
+		return -ENODEV;
 
 	for (i = 0; i < PIUIO_MULTIPLEX; i++) {
 		/* First select which set of inputs to get */
@@ -159,7 +147,7 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 				PIUIO_MSG_VAL, PIUIO_MSG_IDX,
 				&st->outputs, sizeof(st->outputs), timeout_ms);
 		if (rv < 0)
-			break;
+			return rv;
 
 		/* Then request the status of the inputs */
 		rv = usb_control_msg(st->dev, usb_rcvctrlpipe(st->dev, 0),
@@ -169,11 +157,29 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 				&buf[i * PIUIO_INPUT_SZ], PIUIO_INPUT_SZ,
 				timeout_ms);
 		if (rv < 0)
-			break;
+			return rv;
 	}
 
-out:
+	return PIUIO_INPUT_SZ * PIUIO_MULTIPLEX;
+}
+
+/* Reading a packet from /dev/piuioN returns the state of all the sensors */
+static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
+		loff_t *pofs)
+{
+	struct piuio_state *st;
+	char buf[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
+	int rv = 0;
+
+	if (sz != sizeof(buf))
+		return -EINVAL;
+
+	st = filp->private_data;
+
+	mutex_lock(&st->lock);
+	rv = do_piuio_read(st, buf);
 	mutex_unlock(&st->lock);
+
 	if (rv < 0)
 		return rv;
 	if (copy_to_user(ubuf, buf, sizeof(buf)))
