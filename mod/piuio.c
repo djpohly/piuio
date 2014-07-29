@@ -349,16 +349,11 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 
 	/* Consolidate the inputs (0 means pressed, so we AND them) */
 	memcpy(inputs, st->inputs, PIUIO_INPUT_SZ);
-	for (i = 1; i < PIUIO_MULTIPLEX; i++)
-		for (j = 0; j < PIUIO_INPUT_SZ; j++)
-			inputs[j] &= st->inputs[i * PIUIO_INPUT_SZ + j];
-
-	/* Consolidate the last inputs and compare them to current */
 	memcpy(changed, st->last_inputs, PIUIO_INPUT_SZ);
 	for (i = 1; i < PIUIO_MULTIPLEX; i++)
 		for (j = 0; j < PIUIO_INPUT_SZ; j++) {
+			inputs[j] &= st->inputs[i * PIUIO_INPUT_SZ + j];
 			changed[j] &= st->last_inputs[i * PIUIO_INPUT_SZ + j];
-			changed[j] ^= inputs[j];
 		}
 
 	/* Done with st->inputs/last_inputs */
@@ -366,12 +361,15 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 
 	/* Find the inputs which have changed state and report them */
 	update = 0;
-	for (i = 0; i < PIUIO_INPUT_SZ; i++)
-		for (j = 0; j < 8 * sizeof(*changed); j++)
+	for (i = 0; i < PIUIO_INPUT_SZ; i++) {
+		changed[i] ^= inputs[i];
+		for (j = 0; j < 8 * sizeof(*changed); j++) {
 			if (changed[i] & (1 << j)) {
 				update = 1;
 				report_key(ipdev, i * 8 + j, inputs[i] & (1 << j));
 			}
+		}
+	}
 
 	/* If we reported anything, flush our input events */
 	if (update)
