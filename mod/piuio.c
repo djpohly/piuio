@@ -130,7 +130,7 @@ static struct usb_driver piuio_driver;
 
 
 /* Perform the read in kernelspace.  Must be called with st->lock held. */
-static ssize_t do_piuio_read(struct piuio_state *st)
+static ssize_t do_piuio_read(struct piuio_state *st, u8 *buf)
 {
 	int i;
 	int rv;
@@ -156,7 +156,7 @@ static ssize_t do_piuio_read(struct piuio_state *st)
 				PIUIO_MSG_REQ,
 				USB_DIR_IN|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
 				PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-				&st->inputs[i * PIUIO_INPUT_SZ], PIUIO_INPUT_SZ,
+				&buf[i * PIUIO_INPUT_SZ], PIUIO_INPUT_SZ,
 				timeout_ms);
 		if (rv < 0)
 			return rv;
@@ -178,7 +178,7 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 	st = filp->private_data;
 
 	mutex_lock(&st->lock);
-	rv = do_piuio_read(st);
+	rv = do_piuio_read(st, st->inputs);
 	mutex_unlock(&st->lock);
 
 	if (rv < 0)
@@ -340,7 +340,7 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 	memcpy(st->last_inputs, st->inputs, sizeof(st->last_inputs));
 
 	/* Poll the device */
-	rv = do_piuio_read(st);
+	rv = do_piuio_read(st, st->inputs);
 	if (rv < 0) {
 		mutex_unlock(&st->lock);
 		dev_err(&st->intf->dev, "PIUIO read failed in poll: %d\n", rv);
