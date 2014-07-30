@@ -343,7 +343,7 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 	/* Error if the device has been disconnected */
 	if (!st->intf) {
 		mutex_unlock(&st->lock);
-		dev_err(&st->intf->dev, "device disconnected before poll\n");
+		dev_warn(&st->intf->dev, "poll after device disconnected\n");
 		return;
 	}
 
@@ -354,7 +354,7 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 	rv = do_piuio_read(st, st->inputs);
 	if (rv < 0) {
 		mutex_unlock(&st->lock);
-		dev_err(&st->intf->dev, "PIUIO read failed in poll: %d\n", rv);
+		dev_err(&st->intf->dev, "read failed in poll: %d\n", rv);
 		return;
 	}
 
@@ -401,14 +401,14 @@ static int piuio_probe(struct usb_interface *intf,
 	/* Set up state structure */
 	st = state_create(intf);
 	if (!st) {
-		dev_err(&intf->dev, "Failed to allocate state\n");
+		dev_err(&intf->dev, "failed to allocate state\n");
 		return -ENOMEM;
 	}
 
 	/* Allocate and initialize the polled input device */
 	ipdev = input_allocate_polled_device();
 	if (!ipdev) {
-		dev_err(&intf->dev, "Failed to allocate polled input device\n");
+		dev_err(&intf->dev, "failed to allocate polled input device\n");
 		goto err_allocating_ipdev;
 	}
 	st->ipdev = ipdev;
@@ -441,7 +441,7 @@ static int piuio_probe(struct usb_interface *intf,
 	/* Register the polled input device */
 	rv = input_register_polled_device(ipdev);
 	if (rv) {
-		dev_err(&intf->dev, "Failed to register polled input device\n");
+		dev_err(&intf->dev, "failed to register polled input device\n");
 		goto err_registering_input;
 	}
 
@@ -449,7 +449,7 @@ static int piuio_probe(struct usb_interface *intf,
 	usb_set_intfdata(intf, st);
 	rv = usb_register_dev(intf, &piuio_class);
 	if (rv) {
-		dev_err(&intf->dev, "Failed to register USB device\n");
+		dev_err(&intf->dev, "failed to register USB device\n");
 		goto err_registering_usb;
 	}
 
