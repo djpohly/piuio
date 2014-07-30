@@ -326,6 +326,34 @@ static void report_key(struct input_polled_dev *ipdev, int pin, int release)
 	input_report_key(input, keycode_for_pin(pin), !release);
 }
 
+static void piuio_input_open(struct input_polled_dev *ipdev)
+{
+	struct piuio_state *st = ipdev->private;
+	int rv;
+
+	/* Pick up a reference to the interface */
+	kref_get(&st->kref);
+
+	/* Ensure the device isn't suspended while in use */
+	rv = usb_autopm_get_interface(st->intf);
+	if (rv) {
+		dev_err(&st->intf->dev, "couldn't get autopm reference\n");
+		kref_put(&st->kref, state_destroy);
+		return;
+	}
+}
+
+static void piuio_input_close(struct input_polled_dev *ipdev)
+{
+	struct piuio_state *st = ipdev->private;
+
+	if (st->intf)
+		usb_autopm_put_interface(st->intf);
+
+	/* Drop reference */
+	kref_put(&st->kref, state_destroy);
+}
+
 /* Update the device state and generate input events based on the changes */
 static void piuio_input_poll(struct input_polled_dev *ipdev)
 {
@@ -415,6 +443,8 @@ static int piuio_probe(struct usb_interface *intf,
 
 	ipdev->private = st;
 	ipdev->poll = piuio_input_poll;
+	ipdev->open = piuio_input_open;
+	ipdev->close = piuio_input_close;
 	ipdev->poll_interval = poll_interval_ms;
 
 	/* Initialize the underlying input device */
