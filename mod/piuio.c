@@ -147,26 +147,7 @@ static ssize_t do_piuio_read(struct piuio_state *st, u8 *buf, int group)
 }
 
 
-/* Use the joystick buttons first, then the extra "trigger happy" range. */
-static int keycode_for_pin(int pin)
-{
-	if (pin < 0x10)
-		return BTN_JOYSTICK + pin;
-	pin -= 0x10;
-	if (pin < 0x40)
-		return BTN_TRIGGER_HAPPY + pin;
-
-	return KEY_RESERVED;
-}
-
-static void report_key(struct input_polled_dev *ipdev, int pin, int release)
-{
-	struct input_dev *input = ipdev->input;
-
-	input_event(input, EV_MSC, MSC_SCAN, pin + 1);
-	input_report_key(input, keycode_for_pin(pin), !release);
-}
-
+/* Called when the input device is opened for polling */
 static void piuio_input_open(struct input_polled_dev *ipdev)
 {
 	struct piuio_state *st = ipdev->private;
@@ -184,6 +165,7 @@ static void piuio_input_open(struct input_polled_dev *ipdev)
 	}
 }
 
+/* Called when polling stops on the input device */
 static void piuio_input_close(struct input_polled_dev *ipdev)
 {
 	struct piuio_state *st = ipdev->private;
@@ -193,6 +175,27 @@ static void piuio_input_close(struct input_polled_dev *ipdev)
 
 	/* Drop reference */
 	kref_put(&st->kref, state_destroy);
+}
+
+/* Use the joystick buttons first, then the extra "trigger happy" range. */
+static int keycode_for_pin(int pin)
+{
+	if (pin < 0x10)
+		return BTN_JOYSTICK + pin;
+	pin -= 0x10;
+	if (pin < 0x40)
+		return BTN_TRIGGER_HAPPY + pin;
+
+	return KEY_RESERVED;
+}
+
+/* Submit a keypress to the input subsystem.  Remember to sync after this. */
+static void report_key(struct input_polled_dev *ipdev, int pin, int release)
+{
+	struct input_dev *input = ipdev->input;
+
+	input_event(input, EV_MSC, MSC_SCAN, pin + 1);
+	input_report_key(input, keycode_for_pin(pin), !release);
 }
 
 /* Update the device state and generate input events based on the changes */
