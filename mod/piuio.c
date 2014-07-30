@@ -56,10 +56,6 @@ static int timeout_ms = 10;
 module_param(timeout_ms, int, 0644);
 MODULE_PARM_DESC(timeout_ms, "Timeout for PIUIO USB messages in ms");
 
-static bool batch_output = true;
-module_param(batch_output, bool, 0644);
-MODULE_PARM_DESC(batch_output, "Batch output messages with next input request");
-
 static unsigned int poll_interval_ms = 3;
 module_param(poll_interval_ms, uint, 0644);
 MODULE_PARM_DESC(poll_interval_ms, "Input device polling interval");
@@ -125,10 +121,6 @@ static void state_destroy(struct kref *kref)
 }
 
 
-/* Forward-declared for use in functions */
-static struct usb_driver piuio_driver;
-
-
 /* Perform the read in kernelspace.  Must be called with st->lock held. */
 static ssize_t do_piuio_read(struct piuio_state *st, u8 *buf, int group)
 {
@@ -153,157 +145,6 @@ static ssize_t do_piuio_read(struct piuio_state *st, u8 *buf, int group)
 			buf, PIUIO_INPUT_SZ, timeout_ms);
 	return rv;
 }
-
-/* Reading a packet from /dev/piuioN returns the state of all the sensors */
-static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
-		loff_t *pofs)
-{
-	struct piuio_state *st;
-	int i;
-	int rv = 0;
-
-	if (sz != sizeof(st->inputs))
-		return -EINVAL;
-
-	st = filp->private_data;
-
-	mutex_lock(&st->lock);
-
-	/* Error if the device has been disconnected */
-	if (!st->intf) {
-		mutex_unlock(&st->lock);
-		return -ENODEV;
-	}
-
-	for (i = 0; i < PIUIO_MULTIPLEX; i++) {
-		rv = do_piuio_read(st, &st->inputs[i * PIUIO_INPUT_SZ], i);
-		if (rv < 0)
-			break;
-	}
-
-	mutex_unlock(&st->lock);
-
-	if (rv < 0)
-		return rv;
-	if (copy_to_user(ubuf, st->inputs, sizeof(st->inputs)))
-		return -EFAULT;
-	return sizeof(st->inputs);
-}
-
-/* Performs the write after the buffer is copied to kernelspace */
-static ssize_t do_piuio_write(struct piuio_state *st)
-{
-	int rv;
-
-	/* Error if the device has been closed */
-	if (!st->intf)
-		return -ENODEV;
-
-	/* Otherwise, update the lights right away */
-	rv = usb_control_msg(st->dev, usb_sndctrlpipe(st->dev, 0),
-			PIUIO_MSG_REQ,
-			USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
-			PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-			&st->outputs, sizeof(st->outputs), timeout_ms);
-	return rv ? rv : sizeof(st->outputs);
-}
-
-/* Writing a packet to /dev/piuioN controls the lights and other outputs */
-static ssize_t piuio_write(struct file *filp, const char __user *ubuf,
-		size_t sz, loff_t *pofs)
-{
-	struct piuio_state *st;
-	unsigned char buf[PIUIO_OUTPUT_SZ];
-	int rv;
-
-	if (sz != sizeof(st->outputs))
-		return -EINVAL;
-	if (copy_from_user(buf, ubuf, sizeof(buf)))
-		return -EFAULT;
-
-	st = filp->private_data;
-
-	/* Save the desired outputs */
-	memcpy(st->outputs, buf, sizeof(st->outputs));
-
-	/* Batching with the next input request?  If so, return now. */
-	if (batch_output)
-		return 0;
-
-	/* XXX Late lock - ignoring race conditions on st->outputs for now for
-	 * performance reasons */
-	mutex_lock(&st->lock);
-	rv = do_piuio_write(st);
-	mutex_unlock(&st->lock);
-
-	return rv;
-}
-
-/* Handles open() for /dev/piuioN */
-static int piuio_open(struct inode *inode, struct file *filp)
-{
-	struct usb_interface *intf;
-	struct piuio_state *st;
-	int rv;
-
-	/* Get the corresponding interface and state */
-	intf = usb_find_interface(&piuio_driver, iminor(inode));
-	if (!intf)
-		return -ENODEV;
-	st = usb_get_intfdata(intf);
-	if (!st)
-		return -ENODEV;
-
-	/* Pick up a reference to the interface */
-	kref_get(&st->kref);
-
-	/* Ensure the device isn't suspended while in use */
-	rv = usb_autopm_get_interface(intf);
-	if (rv) {
-		kref_put(&st->kref, state_destroy);
-		return rv;
-	}
-
-	/* Attach our state to the file */
-	filp->private_data = st;
-	return 0;
-}
-
-/* Cleans up after the last close() on a descriptor for /dev/piuioN */
-static int piuio_release(struct inode *inode, struct file *filp)
-{
-	struct piuio_state *st;
-
-	st = filp->private_data;
-	if (st == NULL)
-		return -ENODEV;
-
-	/* Reset lights */
-	memset(st->outputs, 0, sizeof(st->outputs));
-	do_piuio_write(st);
-
-	if (st->intf)
-		usb_autopm_put_interface(st->intf);
-
-	/* Drop reference */
-	kref_put(&st->kref, state_destroy);
-	return 0;
-}
-
-/* File operations for /dev/piuioN */
-static const struct file_operations piuio_fops = {
-	.owner =	THIS_MODULE,
-	.read =		piuio_read,
-	.write =	piuio_write,
-	.open =		piuio_open,
-	.release =	piuio_release,
-};
-
-/* Class driver, for creating device files */
-static struct usb_class_driver piuio_class = {
-	.name =		"piuio%d",
-	.fops =		&piuio_fops,
-};
 
 
 /* Use the joystick buttons first, then the extra "trigger happy" range. */
@@ -468,6 +309,9 @@ static int piuio_probe(struct usb_interface *intf,
 	input_set_abs_params(idev, ABS_X, 0, 0, 0, 0);
 	input_set_abs_params(idev, ABS_Y, 0, 0, 0, 0);
 
+	/* Save a handle in the USB interface */
+	usb_set_intfdata(intf, st);
+
 	/* Register the polled input device */
 	rv = input_register_polled_device(ipdev);
 	if (rv) {
@@ -475,21 +319,11 @@ static int piuio_probe(struct usb_interface *intf,
 		goto err_registering_input;
 	}
 
-	/* Register the USB device */
-	usb_set_intfdata(intf, st);
-	rv = usb_register_dev(intf, &piuio_class);
-	if (rv) {
-		dev_err(&intf->dev, "failed to register USB device\n");
-		goto err_registering_usb;
-	}
-
 	return rv;
 
-err_registering_usb:
-	usb_set_intfdata(intf, NULL);
-	input_unregister_polled_device(ipdev);
 err_registering_input:
 	input_free_polled_device(ipdev);
+	usb_set_intfdata(intf, NULL);
 err_allocating_ipdev:
 	kref_put(&st->kref, state_destroy);
 	return rv;
@@ -500,9 +334,8 @@ static void piuio_disconnect(struct usb_interface *intf)
 {
 	struct piuio_state *st = usb_get_intfdata(intf);
 
-	usb_set_intfdata(intf, NULL);
-	usb_deregister_dev(intf, &piuio_class);
 	input_unregister_polled_device(st->ipdev);
+	usb_set_intfdata(intf, NULL);
 	input_free_polled_device(st->ipdev);
 
 	/* Signal to any stragglers that the device is gone */
