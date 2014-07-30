@@ -135,10 +135,6 @@ static ssize_t do_piuio_read(struct piuio_state *st, u8 *buf)
 	int i;
 	int rv;
 
-	/* Error if the device has been disconnected */
-	if (!st->intf)
-		return -ENODEV;
-
 	for (i = 0; i < PIUIO_MULTIPLEX; i++) {
 		/* First select which set of inputs to get */
 		st->outputs[0] = (st->outputs[0] & ~3) | i;
@@ -178,7 +174,15 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 	st = filp->private_data;
 
 	mutex_lock(&st->lock);
+
+	/* Error if the device has been disconnected */
+	if (!st->intf) {
+		mutex_unlock(&st->lock);
+		return -ENODEV;
+	}
+
 	rv = do_piuio_read(st, st->inputs);
+
 	mutex_unlock(&st->lock);
 
 	if (rv < 0)
@@ -335,6 +339,13 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 	int rv;
 
 	mutex_lock(&st->lock);
+
+	/* Error if the device has been disconnected */
+	if (!st->intf) {
+		mutex_unlock(&st->lock);
+		dev_err(&st->intf->dev, "device disconnected before poll\n");
+		return;
+	}
 
 	/* Keep these around for later reference */
 	memcpy(st->last_inputs, st->inputs, sizeof(st->last_inputs));
