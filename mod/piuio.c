@@ -130,35 +130,28 @@ static struct usb_driver piuio_driver;
 
 
 /* Perform the read in kernelspace.  Must be called with st->lock held. */
-static ssize_t do_piuio_read(struct piuio_state *st, u8 *buf)
+static ssize_t do_piuio_read(struct piuio_state *st, u8 *buf, int group)
 {
-	int i;
 	int rv;
 
-	for (i = 0; i < PIUIO_MULTIPLEX; i++) {
-		/* First select which set of inputs to get */
-		st->outputs[0] = (st->outputs[0] & ~3) | i;
-		st->outputs[2] = (st->outputs[2] & ~3) | i;
-		rv = usb_control_msg(st->dev, usb_sndctrlpipe(st->dev, 0),
-				PIUIO_MSG_REQ,
-				USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
-				PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-				&st->outputs, sizeof(st->outputs), timeout_ms);
-		if (rv < 0)
-			return rv;
+	/* First select which set of inputs to get */
+	st->outputs[0] = (st->outputs[0] & ~3) | group;
+	st->outputs[2] = (st->outputs[2] & ~3) | group;
+	rv = usb_control_msg(st->dev, usb_sndctrlpipe(st->dev, 0),
+			PIUIO_MSG_REQ,
+			USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
+			PIUIO_MSG_VAL, PIUIO_MSG_IDX,
+			&st->outputs, sizeof(st->outputs), timeout_ms);
+	if (rv < 0)
+		return rv;
 
-		/* Then request the status of the inputs */
-		rv = usb_control_msg(st->dev, usb_rcvctrlpipe(st->dev, 0),
-				PIUIO_MSG_REQ,
-				USB_DIR_IN|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
-				PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-				&buf[i * PIUIO_INPUT_SZ], PIUIO_INPUT_SZ,
-				timeout_ms);
-		if (rv < 0)
-			return rv;
-	}
-
-	return PIUIO_INPUT_SZ * PIUIO_MULTIPLEX;
+	/* Then request the status of the inputs */
+	rv = usb_control_msg(st->dev, usb_rcvctrlpipe(st->dev, 0),
+			PIUIO_MSG_REQ,
+			USB_DIR_IN|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
+			PIUIO_MSG_VAL, PIUIO_MSG_IDX,
+			buf, PIUIO_INPUT_SZ, timeout_ms);
+	return rv;
 }
 
 /* Reading a packet from /dev/piuioN returns the state of all the sensors */
@@ -166,6 +159,7 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 		loff_t *pofs)
 {
 	struct piuio_state *st;
+	int i;
 	int rv = 0;
 
 	if (sz != sizeof(st->inputs))
@@ -181,7 +175,11 @@ static ssize_t piuio_read(struct file *filp, char __user *ubuf, size_t sz,
 		return -ENODEV;
 	}
 
-	rv = do_piuio_read(st, st->inputs);
+	for (i = 0; i < PIUIO_MULTIPLEX; i++) {
+		rv = do_piuio_read(st, &st->inputs[i * PIUIO_INPUT_SZ], i);
+		if (rv < 0)
+			break;
+	}
 
 	mutex_unlock(&st->lock);
 
@@ -351,11 +349,13 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 	memcpy(st->last_inputs, st->inputs, sizeof(st->last_inputs));
 
 	/* Poll the device */
-	rv = do_piuio_read(st, st->inputs);
-	if (rv < 0) {
-		mutex_unlock(&st->lock);
-		dev_err(&st->intf->dev, "read failed in poll: %d\n", rv);
-		return;
+	for (i = 0; i < PIUIO_MULTIPLEX; i++) {
+		rv = do_piuio_read(st, &st->inputs[i * PIUIO_INPUT_SZ], i);
+		if (rv < 0) {
+			mutex_unlock(&st->lock);
+			dev_err(&st->intf->dev, "read failed in poll: %d\n", rv);
+			return;
+		}
 	}
 
 	/* Consolidate the inputs (0 means pressed, so we AND them) */
