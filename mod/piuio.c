@@ -56,7 +56,7 @@ static int timeout_ms = 10;
 module_param(timeout_ms, int, 0644);
 MODULE_PARM_DESC(timeout_ms, "Timeout for PIUIO USB messages in ms");
 
-static unsigned int poll_interval_ms = 3;
+static unsigned int poll_interval_ms = 1;
 module_param(poll_interval_ms, uint, 0644);
 MODULE_PARM_DESC(poll_interval_ms, "Input device polling interval");
 
