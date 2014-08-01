@@ -180,10 +180,10 @@ static void piuio_input_close(struct input_polled_dev *ipdev)
 /* Use the joystick buttons first, then the extra "trigger happy" range. */
 static int keycode_for_pin(int pin)
 {
-	if (pin < 0x10)
+	if (pin < 16)
 		return BTN_JOYSTICK + pin;
 	pin -= 0x10;
-	if (pin < 0x40)
+	if (pin < 48)
 		return BTN_TRIGGER_HAPPY + pin;
 
 	return KEY_RESERVED;
@@ -193,6 +193,10 @@ static int keycode_for_pin(int pin)
 static void report_key(struct input_polled_dev *ipdev, int pin, int release)
 {
 	struct input_dev *input = ipdev->input;
+	int code = keycode_for_pin(pin);
+
+	if (code == KEY_RESERVED)
+		return;
 
 	input_event(input, EV_MSC, MSC_SCAN, pin + 1);
 	input_report_key(input, keycode_for_pin(pin), !release);
