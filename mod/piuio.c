@@ -204,7 +204,7 @@ static int keycode_for_pin(unsigned int pin)
 }
 
 /* Submit a keypress to the input subsystem.  Remember to sync after this. */
-static void report_key(struct input_polled_dev *ipdev, unsigned int pin, int release)
+static void report_key(struct input_polled_dev *ipdev, unsigned int pin, int press)
 {
 	struct input_dev *input = ipdev->input;
 	int code = keycode_for_pin(pin);
@@ -213,7 +213,7 @@ static void report_key(struct input_polled_dev *ipdev, unsigned int pin, int rel
 		return;
 
 	input_event(input, EV_MSC, MSC_SCAN, pin + 1);
-	input_report_key(input, keycode_for_pin(pin), !release);
+	input_report_key(input, keycode_for_pin(pin), press);
 }
 
 /* Update the device state and generate input events based on the changes */
@@ -223,9 +223,9 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 	unsigned long inputs[PIUIO_INPUT_SZ];
 	unsigned long changed[PIUIO_INPUT_SZ];
 	unsigned long *current_set;
+	unsigned long b;
 	int i;
 	int set;
-	int b;
 	int update;
 	int rv;
 
@@ -270,11 +270,15 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 	/* Find and report any inputs which have changed state */
 	update = 0;
 	for (i = 0; i < PIUIO_INPUT_SZ; i++) {
-		for (b = 0; b < 8 * sizeof(*changed); b++) {
-			if (changed[i] & (1 << b)) {
-				update = 1;
-				report_key(ipdev, i * 8 + b, inputs[i] & (1 << b));
-			}
+		/* While some bit is set... */
+		while (changed[i]) {
+			/* find the index of the first set bit and clear it */
+			b = __ffs(changed[i]);
+			clear_bit(b, &changed[i]);
+			/* and report the corresponding press or release. */
+			report_key(ipdev, i * BITS_PER_LONG + b,
+					!test_bit(b, &inputs[i]));
+			update = 1;
 		}
 	}
 
