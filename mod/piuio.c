@@ -259,6 +259,31 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 		input_sync(ipdev->input);
 }
 
+static void setup_input_device(struct input_dev *idev, struct piuio_state *st)
+{
+	int i;
+
+	/* Fill in basic fields */
+	idev->name = "PIUIO input";
+	idev->phys = st->input_phys;
+	usb_to_input_id(st->dev, &idev->id);
+	idev->dev.parent = &st->intf->dev;
+
+	/* Configure our buttons */
+	set_bit(EV_KEY, idev->evbit);
+	for (i = 0; i < PIUIO_NUM_INPUTS; i++)
+		set_bit(keycode_for_pin(i), idev->keybit);
+
+	/* HACK: Buttons are sufficient to trigger a /dev/input/js* device, but
+	 * for systemd (and consequently udev and Xorg) to consider us a
+	 * joystick, we have to have a set of XY absolute axes. */
+	set_bit(EV_ABS, idev->evbit);
+	set_bit(ABS_X, idev->absbit);
+	set_bit(ABS_Y, idev->absbit);
+	input_set_abs_params(idev, ABS_X, 0, 0, 0, 0);
+	input_set_abs_params(idev, ABS_Y, 0, 0, 0, 0);
+}
+
 
 /* Set up a device being connected to this driver */
 static int piuio_probe(struct usb_interface *intf,
@@ -266,8 +291,6 @@ static int piuio_probe(struct usb_interface *intf,
 {
 	struct piuio_state *st;
 	struct input_polled_dev *ipdev;
-	struct input_dev *idev;
-	int i;
 	int rv = -ENOMEM;
 
 	/* Set up state structure */
@@ -291,26 +314,8 @@ static int piuio_probe(struct usb_interface *intf,
 	ipdev->close = piuio_input_close;
 	ipdev->poll_interval = poll_interval_ms;
 
-	/* Initialize the underlying input device */
-	idev = ipdev->input;
-	idev->name = "PIUIO input";
-	idev->phys = st->input_phys;
-	usb_to_input_id(st->dev, &idev->id);
-	idev->dev.parent = &intf->dev;
-
-	/* Configure our buttons */
-	set_bit(EV_KEY, idev->evbit);
-	for (i = 0; i < PIUIO_NUM_INPUTS; i++)
-		set_bit(keycode_for_pin(i), idev->keybit);
-
-	/* HACK: Buttons are sufficient to trigger a /dev/input/js* device, but
-	 * for systemd (and consequently udev and Xorg) to consider us a
-	 * joystick, we have to have a set of XY absolute axes. */
-	set_bit(EV_ABS, idev->evbit);
-	set_bit(ABS_X, idev->absbit);
-	set_bit(ABS_Y, idev->absbit);
-	input_set_abs_params(idev, ABS_X, 0, 0, 0, 0);
-	input_set_abs_params(idev, ABS_Y, 0, 0, 0, 0);
+	/* Set up the underlying input device */
+	setup_input_device(ipdev->input, st);
 
 	/* Save a handle in the USB interface */
 	usb_set_intfdata(intf, st);
