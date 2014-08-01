@@ -31,6 +31,7 @@
 /* Size of input and output packets */
 #define PIUIO_NUM_INPUTS 64
 #define PIUIO_INPUT_SZ ((PIUIO_NUM_INPUTS + 7) / 8)
+#define PIUIO_ACTUAL_INPUTS 48
 #define PIUIO_NUM_OUTPUTS 64
 #define PIUIO_OUTPUT_SZ ((PIUIO_NUM_OUTPUTS + 7) / 8)
 
@@ -189,19 +190,18 @@ static void piuio_input_close(struct input_polled_dev *ipdev)
 }
 
 /* Use the joystick buttons first, then the extra "trigger happy" range. */
-static int keycode_for_pin(int pin)
+static int keycode_for_pin(unsigned int pin)
 {
+	if (pin >= PIUIO_ACTUAL_INPUTS)
+		return KEY_RESERVED;
 	if (pin < 16)
 		return BTN_JOYSTICK + pin;
-	pin -= 0x10;
-	if (pin < 48)
-		return BTN_TRIGGER_HAPPY + pin;
-
-	return KEY_RESERVED;
+	pin -= 16;
+	return BTN_TRIGGER_HAPPY + pin;
 }
 
 /* Submit a keypress to the input subsystem.  Remember to sync after this. */
-static void report_key(struct input_polled_dev *ipdev, int pin, int release)
+static void report_key(struct input_polled_dev *ipdev, unsigned int pin, int release)
 {
 	struct input_dev *input = ipdev->input;
 	int code = keycode_for_pin(pin);
