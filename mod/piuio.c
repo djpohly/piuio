@@ -71,7 +71,7 @@ struct piuio_state {
 	struct input_polled_dev *ipdev;
 	char input_phys[64];
 
-	/* Protects intf, inputs, and outputs */
+	/* Protects intf */
 	struct mutex lock;
 
 	/* Refcount for state struct, incremented by probe and open, decremented
@@ -81,8 +81,8 @@ struct piuio_state {
 
 	/* Current state of inputs and outputs */
 	u8 inputs[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
-	u8 last_inputs[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
 	u8 outputs[PIUIO_OUTPUT_SZ];
+	int group;
 };
 
 
@@ -107,7 +107,6 @@ static struct piuio_state *state_create(struct usb_interface *intf)
 
 	/* Initialize inputs to unpressed (1) state */
 	memset(st->inputs, 0xff, PIUIO_INPUT_SZ * PIUIO_MULTIPLEX);
-	memset(st->last_inputs, 0xff, PIUIO_INPUT_SZ * PIUIO_MULTIPLEX);
 
 	return st;
 }
@@ -220,7 +219,10 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 	struct piuio_state *st = ipdev->private;
 	u8 inputs[PIUIO_INPUT_SZ];
 	u8 changed[PIUIO_INPUT_SZ];
-	int i, j;
+	u8 *current_set;
+	int i;
+	int set;
+	int b;
 	int update;
 	int rv;
 
@@ -233,46 +235,53 @@ static void piuio_input_poll(struct input_polled_dev *ipdev)
 		return;
 	}
 
-	/* Keep these around for later reference */
-	memcpy(st->last_inputs, st->inputs, sizeof(st->last_inputs));
-
-	/* Poll the device */
-	for (i = 0; i < PIUIO_MULTIPLEX; i++) {
-		rv = do_piuio_read(st, &st->inputs[i * PIUIO_INPUT_SZ], i);
-		if (rv < 0) {
-			mutex_unlock(&st->lock);
-			dev_err(&st->intf->dev, "read failed in poll: %d\n", rv);
-			return;
-		}
+	/* Poll the device for the current group of inputs */
+	rv = do_piuio_read(st, inputs, st->group);
+	if (rv < 0) {
+		mutex_unlock(&st->lock);
+		dev_err(&st->intf->dev, "read failed in poll: %d\n", rv);
+		return;
 	}
 
-	/* Consolidate the inputs (0 means pressed, so we AND them) */
-	memcpy(inputs, st->inputs, PIUIO_INPUT_SZ);
-	memcpy(changed, st->last_inputs, PIUIO_INPUT_SZ);
-	for (i = 1; i < PIUIO_MULTIPLEX; i++)
-		for (j = 0; j < PIUIO_INPUT_SZ; j++) {
-			inputs[j] &= st->inputs[i * PIUIO_INPUT_SZ + j];
-			changed[j] &= st->last_inputs[i * PIUIO_INPUT_SZ + j];
-		}
-
-	/* Done with st->inputs/last_inputs */
+	/* Done with the USB interface */
 	mutex_unlock(&st->lock);
 
-	/* Find the inputs which have changed state and report them */
+	/* Note what has changed in this input set, then remember it for next
+	 * time */
+	current_set = &st->inputs[st->group * PIUIO_INPUT_SZ];
+	for (i = 0; i < PIUIO_INPUT_SZ; i++) {
+		changed[i] = inputs[i] ^ current_set[i];
+		current_set[i] = inputs[i];
+	}
+
+	/* Changes only count when none of the corresponding inputs in other
+	 * sets are pressed.  Since "pressed" reads as 0, we can use & to knock
+	 * those bits out of the changes. */
+	for (set = 0; set < PIUIO_MULTIPLEX; set++) {
+		if (set == st->group)
+			continue;
+		for (i = 0; i < PIUIO_INPUT_SZ; i++)
+			changed[i] &= st->inputs[set * PIUIO_INPUT_SZ + i];
+	}
+
+	/* Find and report any inputs which have changed state */
 	update = 0;
 	for (i = 0; i < PIUIO_INPUT_SZ; i++) {
-		changed[i] ^= inputs[i];
-		for (j = 0; j < 8 * sizeof(*changed); j++) {
-			if (changed[i] & (1 << j)) {
+		for (b = 0; b < 8 * sizeof(*changed); b++) {
+			if (changed[i] & (1 << b)) {
 				update = 1;
-				report_key(ipdev, i * 8 + j, inputs[i] & (1 << j));
+				report_key(ipdev, i * 8 + b, inputs[i] & (1 << b));
 			}
 		}
 	}
 
-	/* If we reported anything, flush our input events */
+	/* If we reported something, flush the generated input events */
 	if (update)
 		input_sync(ipdev->input);
+
+	/* Rotate input sets */
+	st->group++;
+	st->group %= PIUIO_MULTIPLEX;
 }
 
 static void setup_input_device(struct input_dev *idev, struct piuio_state *st)
