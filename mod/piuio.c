@@ -149,7 +149,7 @@ static ssize_t do_piuio_read(struct piuio_state *st, unsigned long *buf, int gro
 			PIUIO_MSG_REQ,
 			USB_DIR_IN|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
 			PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-			buf, PIUIO_INPUT_SZ, timeout_ms);
+			buf, PIUIO_INPUT_SZ * sizeof(*buf), timeout_ms);
 	return rv;
 }
 
