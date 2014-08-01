@@ -293,12 +293,13 @@ static int piuio_probe(struct usb_interface *intf,
 	struct input_polled_dev *ipdev;
 	int rv = -ENOMEM;
 
-	/* Set up state structure */
+	/* Set up state structure and save a handle in the USB interface */
 	st = state_create(intf);
 	if (!st) {
 		dev_err(&intf->dev, "failed to allocate state\n");
 		return -ENOMEM;
 	}
+	usb_set_intfdata(intf, st);
 
 	/* Allocate and initialize the polled input device */
 	ipdev = input_allocate_polled_device();
@@ -317,9 +318,6 @@ static int piuio_probe(struct usb_interface *intf,
 	/* Set up the underlying input device */
 	setup_input_device(ipdev->input, st);
 
-	/* Save a handle in the USB interface */
-	usb_set_intfdata(intf, st);
-
 	/* Register the polled input device */
 	rv = input_register_polled_device(ipdev);
 	if (rv) {
@@ -333,6 +331,7 @@ err_registering_input:
 	input_free_polled_device(ipdev);
 	usb_set_intfdata(intf, NULL);
 err_allocating_ipdev:
+	st->intf = NULL;
 	kref_put(&st->kref, state_destroy);
 	return rv;
 }
@@ -343,8 +342,8 @@ static void piuio_disconnect(struct usb_interface *intf)
 	struct piuio_state *st = usb_get_intfdata(intf);
 
 	input_unregister_polled_device(st->ipdev);
-	usb_set_intfdata(intf, NULL);
 	input_free_polled_device(st->ipdev);
+	usb_set_intfdata(intf, NULL);
 
 	/* Signal to any stragglers that the device is gone */
 	mutex_lock(&st->lock);
