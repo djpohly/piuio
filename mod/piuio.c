@@ -105,6 +105,10 @@ static struct piuio_state *state_create(struct usb_interface *intf)
 	mutex_init(&st->lock);
 	kref_init(&st->kref);
 
+	/* Initialize inputs to unpressed (1) state */
+	memset(st->inputs, 0xff, PIUIO_INPUT_SZ * PIUIO_MULTIPLEX);
+	memset(st->last_inputs, 0xff, PIUIO_INPUT_SZ * PIUIO_MULTIPLEX);
+
 	return st;
 }
 
