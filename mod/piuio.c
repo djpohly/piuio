@@ -157,7 +157,13 @@ static void piuio_input_open(struct input_polled_dev *ipdev)
 	kref_get(&st->kref);
 
 	/* Ensure the device isn't suspended while in use */
-	rv = usb_autopm_get_interface(st->intf);
+	mutex_lock(&st->lock);
+	if (st->intf)
+		rv = usb_autopm_get_interface(st->intf);
+	else
+		rv = -ENODEV;
+	mutex_unlock(&st->lock);
+
 	if (rv) {
 		dev_err(&st->intf->dev, "couldn't get autopm reference\n");
 		kref_put(&st->kref, state_destroy);
@@ -170,8 +176,10 @@ static void piuio_input_close(struct input_polled_dev *ipdev)
 {
 	struct piuio_state *st = ipdev->private;
 
+	mutex_lock(&st->lock);
 	if (st->intf)
 		usb_autopm_put_interface(st->intf);
+	mutex_unlock(&st->lock);
 
 	/* Drop reference */
 	kref_put(&st->kref, state_destroy);
