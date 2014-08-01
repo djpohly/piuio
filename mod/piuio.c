@@ -34,8 +34,8 @@
 #define PIUIO_NUM_OUTPUTS 64
 #define PIUIO_OUTPUT_SZ ((PIUIO_NUM_OUTPUTS + 7) / 8)
 
-/* XXX: The piuio_read code currently expects this to be 4.  Until we know more
- * about how the device works, it will have to stay that way. */
+/* XXX: The do_piuio_read code currently expects this to be 4.  Until we know
+ * more about how the device works, it will have to stay that way. */
 #define PIUIO_MULTIPLEX 4
 
 
