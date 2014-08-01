@@ -12,6 +12,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/bitops.h>
 #include <linux/usb.h>
 #include <linux/input.h>
 #include <linux/input-polldev.h>
@@ -30,8 +31,9 @@
 
 /* Size of input and output packets */
 #define PIUIO_NUM_INPUTS 64
-#define PIUIO_INPUT_SZ ((PIUIO_NUM_INPUTS + 7) / 8)
+#define PIUIO_INPUT_SZ (BITS_TO_LONGS(PIUIO_NUM_INPUTS))
 #define PIUIO_ACTUAL_INPUTS 48
+
 #define PIUIO_NUM_OUTPUTS 64
 #define PIUIO_OUTPUT_SZ ((PIUIO_NUM_OUTPUTS + 7) / 8)
 
@@ -81,7 +83,7 @@ struct piuio_state {
 	struct kref kref;
 
 	/* Current state of inputs and outputs */
-	u8 inputs[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
+	unsigned long inputs[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
 	u8 outputs[PIUIO_OUTPUT_SZ];
 	int group;
 };
@@ -107,7 +109,8 @@ static struct piuio_state *state_create(struct usb_interface *intf)
 	kref_init(&st->kref);
 
 	/* Initialize inputs to unpressed (1) state */
-	memset(st->inputs, 0xff, PIUIO_INPUT_SZ * PIUIO_MULTIPLEX);
+	memset(st->inputs, 0xff,
+			PIUIO_INPUT_SZ * PIUIO_MULTIPLEX * sizeof(*st->inputs));
 
 	return st;
 }
@@ -126,7 +129,7 @@ static void state_destroy(struct kref *kref)
 
 
 /* Perform the read in kernelspace.  Must be called with st->lock held. */
-static ssize_t do_piuio_read(struct piuio_state *st, u8 *buf, int group)
+static ssize_t do_piuio_read(struct piuio_state *st, unsigned long *buf, int group)
 {
 	int rv;
 
@@ -217,9 +220,9 @@ static void report_key(struct input_polled_dev *ipdev, unsigned int pin, int rel
 static void piuio_input_poll(struct input_polled_dev *ipdev)
 {
 	struct piuio_state *st = ipdev->private;
-	u8 inputs[PIUIO_INPUT_SZ];
-	u8 changed[PIUIO_INPUT_SZ];
-	u8 *current_set;
+	unsigned long inputs[PIUIO_INPUT_SZ];
+	unsigned long changed[PIUIO_INPUT_SZ];
+	unsigned long *current_set;
 	int i;
 	int set;
 	int b;
