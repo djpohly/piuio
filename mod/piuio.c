@@ -292,6 +292,8 @@ static int init_piuio(struct piuio *piu, struct input_dev *dev,
 
 	piu->dev = dev;
 	piu->usbdev = usbdev;
+	usb_make_path(usbdev, piu->phys, sizeof(piu->phys));
+	strlcat(piu->phys, "/input0", sizeof(piu->phys));
 
 	return 0;
 }
@@ -323,10 +325,6 @@ static int piuio_probe(struct usb_interface *iface,
 
 	if (init_piuio(piu, dev, usbdev))
 		goto fail2;
-
-	/* Fill in state fields */
-	usb_make_path(usbdev, piu->phys, sizeof(piu->phys));
-	strlcat(piu->phys, "/input0", sizeof(piu->phys));
 
 	/* Fill in input device fields */
 	setup_input_device(piu, &iface->dev);
