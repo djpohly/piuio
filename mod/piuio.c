@@ -213,31 +213,6 @@ static void piuio_out_completed(struct urb *urb)
 	}
 }
 
-static int piuio_alloc_mem(struct piuio *piu)
-{
-	/* Freeing in case of error will be handled by piuio_free_mem */
-	if (!(piu->in = usb_alloc_urb(0, GFP_KERNEL)))
-		return -1;
-	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
-		return -1;
-	if (!(piu->new = usb_alloc_coherent(piu->usbdev, PIUIO_PACKET_SZ,
-					GFP_KERNEL, &piu->new_dma)))
-		return -1;
-	if (!(piu->lights = usb_alloc_coherent(piu->usbdev, PIUIO_PACKET_SZ,
-					GFP_KERNEL, &piu->out_dma)))
-		return -1;
-
-	return 0;
-}
-
-static void piuio_free_mem(struct piuio *piu)
-{
-	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->lights, piu->out_dma);
-	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->new, piu->new_dma);
-	usb_free_urb(piu->out);
-	usb_free_urb(piu->in);
-}
-
 static int piuio_open(struct input_dev *dev)
 {
 	struct piuio *piu = input_get_drvdata(dev);
@@ -262,6 +237,31 @@ static void piuio_close(struct input_dev *dev)
 	usb_kill_urb(piu->out);
 
 	/* XXX Kill the lights! */
+}
+
+static int piuio_alloc_mem(struct piuio *piu)
+{
+	/* Freeing in case of error will be handled by piuio_free_mem */
+	if (!(piu->in = usb_alloc_urb(0, GFP_KERNEL)))
+		return -1;
+	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
+		return -1;
+	if (!(piu->new = usb_alloc_coherent(piu->usbdev, PIUIO_PACKET_SZ,
+					GFP_KERNEL, &piu->new_dma)))
+		return -1;
+	if (!(piu->lights = usb_alloc_coherent(piu->usbdev, PIUIO_PACKET_SZ,
+					GFP_KERNEL, &piu->out_dma)))
+		return -1;
+
+	return 0;
+}
+
+static void piuio_free_mem(struct piuio *piu)
+{
+	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->lights, piu->out_dma);
+	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->new, piu->new_dma);
+	usb_free_urb(piu->out);
+	usb_free_urb(piu->in);
 }
 
 static void setup_input_device(struct piuio *piu, struct device *parent)
