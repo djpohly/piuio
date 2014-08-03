@@ -22,10 +22,6 @@
 /*
  * Module information
  */
-MODULE_AUTHOR("Devin J. Pohly");
-MODULE_DESCRIPTION("PIUIO input/output driver");
-MODULE_LICENSE("GPL");
-
 
 /* USB message used to communicate with the device */
 #define PIUIO_MSG_REQ 0xae
@@ -404,5 +400,9 @@ static struct usb_driver piuio_driver = {
 	.disconnect =	piuio_disconnect,
 	.id_table =	piuio_id_table,
 };
+
+MODULE_AUTHOR("Devin J. Pohly");
+MODULE_DESCRIPTION("PIUIO input/output driver");
+MODULE_LICENSE("GPL");
 
 module_usb_driver(piuio_driver);
