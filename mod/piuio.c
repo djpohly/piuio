@@ -239,7 +239,7 @@ static void piuio_close(struct input_dev *dev)
 	/* XXX Kill the lights! */
 }
 
-static void setup_input_device(struct piuio *piu, struct device *parent)
+static void init_piuio_input(struct piuio *piu, struct device *parent)
 {
 	struct input_dev *dev = piu->dev;
 	int i;
@@ -331,7 +331,7 @@ static int piuio_probe(struct usb_interface *iface,
 	if (ret)
 		goto fail1;
 
-	setup_input_device(piu, &iface->dev);
+	init_piuio_input(piu, &iface->dev);
 
 	/* Prepare URB for multiplexer and lights */
 	piu->cr_out.bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
