@@ -39,27 +39,24 @@ MODULE_LICENSE("GPL");
 #define PIUIO_PACKET_SZ 8
 #define PIUIO_PACKET_LONGS (PIUIO_PACKET_SZ / sizeof(unsigned long))
 
-/* Number of input "sets" multiplexed together */
-/* XXX: The code currently expects this to be 4.  Until we know more about how
- * the device works, it will have to stay that way. */
+/* Number of sets of inputs multiplexed together */
 #define PIUIO_MULTIPLEX 4
 
 
 /**
  * struct piuio - state of each attached PIUIO
  * @dev:	input device associated with this PIUIO
+ * @phys:	Physical path of the device. @dev's phys field points to this
+ *		buffer
  * @usbdev:	usb device associated with this PIUIO
+ * @in:		URB for requesting the current state of one set of inputs
+ * @out:	URB for sending data to outputs and multiplexer
+ * @cr_in:	Setup packet for @new URB
+ * @cr_out:	Setup packet for @out URB
  * @old:	previous state of input pins from the @in URB for each of the
  *		input sets.  These are used to determine when a press or release
  *		has happened for a group of correlated inputs.
- * @in:		URB for requesting the current state of one set of inputs
- * @out:	URB for sending data to outputs and multiplexer
- * @name:	Name of the device. @dev's name field points to this buffer
- * @phys:	Physical path of the device. @dev's phys field points to this
- *		buffer
  * @new:	Buffer for the @in URB
- * @cr_out:	Control request for @out URB
- * @cr_in:	Control request for @new URB
  * @lights:	Buffer for the @out URB
  * @new_lights:	Staging for the @lights buffer
  * @new_dma:	DMA address for @in URB
@@ -68,16 +65,17 @@ MODULE_LICENSE("GPL");
  */
 struct piuio {
 	struct input_dev *dev;
-	struct usb_device *usbdev;
-	unsigned long old[PIUIO_MULTIPLEX][PIUIO_PACKET_LONGS];
-	struct urb *in, *out;
-	char name[128];
 	char phys[64];
 
+	struct usb_device *usbdev;
+	struct urb *in, *out;
+	struct usb_ctrlrequest cr_in, cr_out;
+
+	unsigned long old[PIUIO_MULTIPLEX][PIUIO_PACKET_LONGS];
 	unsigned long *new;
-	struct usb_ctrlrequest cr_out, cr_in;
 	unsigned char *lights;
 	unsigned char new_lights[PIUIO_PACKET_SZ];
+
 	dma_addr_t new_dma;
 	dma_addr_t out_dma;
 	
