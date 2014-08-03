@@ -260,6 +260,8 @@ static void piuio_close(struct input_dev *dev)
 	/* Stop polling */
 	usb_kill_urb(piu->in);
 	usb_kill_urb(piu->out);
+
+	/* XXX Kill the lights! */
 }
 
 static void setup_input_device(struct piuio *piu, struct device *parent)
