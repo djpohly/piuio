@@ -7,195 +7,91 @@
  *	modify it under the terms of the GNU General Public License as
  *	published by the Free Software Foundation, version 2.
  *
- * This code is based on the USB skeleton driver by Greg Kroah-Hartman.
+ * This code is based on the Linux USB HID keyboard driver by Vojtech Pavlik.
  */
+
 #include <linux/kernel.h>
 #include <linux/module.h>
-#include <linux/init.h>
-#include <linux/bitops.h>
-#include <linux/usb.h>
-#include <linux/input.h>
-#include <linux/input-polldev.h>
-#include <linux/usb/input.h>
 #include <linux/slab.h>
-#include <linux/kref.h>
-#include <linux/uaccess.h>
-#include <linux/mutex.h>
 #include <linux/errno.h>
+#include <linux/bitops.h>
+#include <linux/input.h>
+#include <linux/usb.h>
+#include <linux/usb/input.h>
 
-
-/* Protocol-specific parameters */
-#define PIUIO_MSG_REQ 0xae
-#define PIUIO_MSG_VAL 0
-#define PIUIO_MSG_IDX 0
-
-/* Size of input and output packets */
-#define PIUIO_NUM_INPUTS 64
-#define PIUIO_INPUT_SZ (BITS_TO_LONGS(PIUIO_NUM_INPUTS))
-#define PIUIO_ACTUAL_INPUTS 48
-
-#define PIUIO_NUM_OUTPUTS 64
-#define PIUIO_OUTPUT_SZ ((PIUIO_NUM_OUTPUTS + 7) / 8)
-
-/* XXX: The do_piuio_read code currently expects this to be 4.  Until we know
- * more about how the device works, it will have to stay that way. */
-#define PIUIO_MULTIPLEX 4
-
-
-/* Module and driver info */
+/*
+ * Module information
+ */
 MODULE_AUTHOR("Devin J. Pohly");
 MODULE_DESCRIPTION("PIUIO input/output driver");
 MODULE_LICENSE("GPL");
 
-/* Vendor/product ID table */
-static const struct usb_device_id piuio_ids[] = {
-	{ USB_DEVICE(0x0547, 0x1002) },
-	{},
+
+/* USB message used to communicate with the device */
+#define PIUIO_MSG_REQ 0xae
+#define PIUIO_MSG_VAL 0
+#define PIUIO_MSG_IDX 0
+
+/* Number of usable inputs */
+#define PIUIO_INPUTS 48
+
+/* Size of input and output packets */
+#define PIUIO_PACKET_SZ 8
+#define PIUIO_PACKET_LONGS (PIUIO_PACKET_SZ / sizeof(unsigned long))
+
+/* Number of input "sets" multiplexed together */
+/* XXX: The code currently expects this to be 4.  Until we know more about how
+ * the device works, it will have to stay that way. */
+#define PIUIO_MULTIPLEX 4
+
+
+/**
+ * struct piuio - state of each attached PIUIO
+ * @dev:	input device associated with this PIUIO
+ * @usbdev:	usb device associated with this PIUIO
+ * @old:	previous state of input pins from the @in URB for each of the
+ *		input sets.  These are used to determine when a press or release
+ *		has happened for a group of correlated inputs.
+ * @in:		URB for requesting the current state of one set of inputs
+ * @out:	URB for sending data to outputs and multiplexer
+ * @name:	Name of the device. @dev's name field points to this buffer
+ * @phys:	Physical path of the device. @dev's phys field points to this
+ *		buffer
+ * @new:	Buffer for the @in URB
+ * @cr_out:	Control request for @out URB
+ * @cr_in:	Control request for @new URB
+ * @lights:	Buffer for the @out URB
+ * @new_lights:	Staging for the @lights buffer
+ * @new_dma:	DMA address for @in URB
+ * @out_dma:	DMA address for @out URB
+ * @set:	current set of inputs to read, (0 .. PIUIO_MULTIPLEX - 1)
+ */
+struct piuio {
+	struct input_dev *dev;
+	struct usb_device *usbdev;
+	unsigned long old[PIUIO_MULTIPLEX][PIUIO_PACKET_LONGS];
+	struct urb *in, *out;
+	char name[128];
+	char phys[64];
+
+	unsigned long *new;
+	struct usb_ctrlrequest cr_out, cr_in;
+	unsigned char *lights;
+	unsigned char new_lights[PIUIO_PACKET_SZ];
+	dma_addr_t new_dma;
+	dma_addr_t out_dma;
+	
+	int set;
 };
-MODULE_DEVICE_TABLE(usb, piuio_ids);
-
-/* Module parameters */
-static int timeout_ms = 10;
-module_param(timeout_ms, int, 0644);
-MODULE_PARM_DESC(timeout_ms, "Timeout for PIUIO USB messages in ms");
-
-static unsigned int poll_interval_ms = 1;
-module_param(poll_interval_ms, uint, 0644);
-MODULE_PARM_DESC(poll_interval_ms, "Input device polling interval");
 
 
-/* Represents the current state of a device */
-struct piuio_state {
-	/* USB device and interface */
-	struct usb_device *dev;	
-	struct usb_interface *intf;
-
-	/* Input device */
-	struct input_polled_dev *ipdev;
-	char input_phys[64];
-
-	/* Protects intf */
-	struct mutex lock;
-
-	/* Refcount for state struct, incremented by probe and open, decremented
-	 * by release and disconnect; needed because last release may happen
-	 * after disconnect */
-	struct kref kref;
-
-	/* Current state of inputs and outputs */
-	unsigned long inputs[PIUIO_INPUT_SZ * PIUIO_MULTIPLEX];
-	u8 outputs[PIUIO_OUTPUT_SZ];
-	int group;
-};
-
-
-/* Allocates driver state and initializes fields */
-static struct piuio_state *state_create(struct usb_interface *intf)
+/*
+ * Mapping from input pins to kernel keycodes.
+ * Use the joystick buttons first, then the extra "trigger happy" range.
+ */
+static int keycode(unsigned int pin)
 {
-	struct piuio_state *st = kzalloc(sizeof(*st), GFP_KERNEL);
-	if (!st)
-		return NULL;
-
-	/* Hold a reference to the USB device */
-	st->dev = usb_get_dev(interface_to_usbdev(intf));
-	st->intf = intf;
-
-	/* Construct a physical path for the input device */
-	usb_make_path(st->dev, st->input_phys, sizeof(st->input_phys));
-	strlcat(st->input_phys, "/input0", sizeof(st->input_phys));
-
-	/* Initialize synchro primitives */
-	mutex_init(&st->lock);
-	kref_init(&st->kref);
-
-	/* Initialize inputs to unpressed (1) state */
-	memset(st->inputs, 0xff,
-			PIUIO_INPUT_SZ * PIUIO_MULTIPLEX * sizeof(*st->inputs));
-
-	return st;
-}
-
-/* Cleans up and frees driver state; opposite of state_create */
-static void state_destroy(struct kref *kref)
-{
-	struct piuio_state *st = container_of(kref, struct piuio_state, kref);
-
-	mutex_destroy(&st->lock);
-
-	/* Drop our reference to the USB device */
-	usb_put_dev(st->dev);
-	kfree(st);
-}
-
-
-/* Perform the read in kernelspace.  Must be called with st->lock held. */
-static ssize_t do_piuio_read(struct piuio_state *st, unsigned long *buf, int group)
-{
-	int rv;
-
-	/* First select which set of inputs to get */
-	st->outputs[0] = (st->outputs[0] & ~3) | group;
-	st->outputs[2] = (st->outputs[2] & ~3) | group;
-	rv = usb_control_msg(st->dev, usb_sndctrlpipe(st->dev, 0),
-			PIUIO_MSG_REQ,
-			USB_DIR_OUT|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
-			PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-			&st->outputs, sizeof(st->outputs), timeout_ms);
-	if (rv < 0)
-		return rv;
-
-	/* Then request the status of the inputs */
-	rv = usb_control_msg(st->dev, usb_rcvctrlpipe(st->dev, 0),
-			PIUIO_MSG_REQ,
-			USB_DIR_IN|USB_TYPE_VENDOR|USB_RECIP_DEVICE,
-			PIUIO_MSG_VAL, PIUIO_MSG_IDX,
-			buf, PIUIO_INPUT_SZ * sizeof(*buf), timeout_ms);
-	return rv;
-}
-
-
-/* Called when the input device is opened for polling */
-static void piuio_input_open(struct input_polled_dev *ipdev)
-{
-	struct piuio_state *st = ipdev->private;
-	int rv;
-
-	/* Pick up a reference to the interface */
-	kref_get(&st->kref);
-
-	/* Ensure the device isn't suspended while in use */
-	mutex_lock(&st->lock);
-	if (st->intf)
-		rv = usb_autopm_get_interface(st->intf);
-	else
-		rv = -ENODEV;
-	mutex_unlock(&st->lock);
-
-	if (rv) {
-		dev_err(&st->intf->dev, "couldn't get autopm reference\n");
-		kref_put(&st->kref, state_destroy);
-		return;
-	}
-}
-
-/* Called when polling stops on the input device */
-static void piuio_input_close(struct input_polled_dev *ipdev)
-{
-	struct piuio_state *st = ipdev->private;
-
-	mutex_lock(&st->lock);
-	if (st->intf)
-		usb_autopm_put_interface(st->intf);
-	mutex_unlock(&st->lock);
-
-	/* Drop reference */
-	kref_put(&st->kref, state_destroy);
-}
-
-/* Use the joystick buttons first, then the extra "trigger happy" range. */
-static int keycode_for_pin(unsigned int pin)
-{
-	if (pin >= PIUIO_ACTUAL_INPUTS)
+	if (pin >= PIUIO_INPUTS)
 		return KEY_RESERVED;
 	if (pin < 16)
 		return BTN_JOYSTICK + pin;
@@ -203,196 +99,305 @@ static int keycode_for_pin(unsigned int pin)
 	return BTN_TRIGGER_HAPPY + pin;
 }
 
-/* Submit a keypress to the input subsystem.  Remember to sync after this. */
-static void report_key(struct input_polled_dev *ipdev, unsigned int pin, int press)
+static void report_key(struct input_dev *dev, unsigned int pin, int press)
 {
-	struct input_dev *input = ipdev->input;
-	int code = keycode_for_pin(pin);
+	int code = keycode(pin);
 
 	if (code == KEY_RESERVED)
 		return;
 
-	input_event(input, EV_MSC, MSC_SCAN, pin + 1);
-	input_report_key(input, keycode_for_pin(pin), press);
+	input_event(dev, EV_MSC, MSC_SCAN, pin + 1);
+	input_report_key(dev, keycode(pin), press);
 }
 
-/* Update the device state and generate input events based on the changes */
-static void piuio_input_poll(struct input_polled_dev *ipdev)
+static void piuio_in_completed(struct urb *urb)
 {
-	struct piuio_state *st = ipdev->private;
-	unsigned long inputs[PIUIO_INPUT_SZ];
-	unsigned long changed[PIUIO_INPUT_SZ];
-	unsigned long *current_set;
+	struct piuio *piu = urb->context;
+	unsigned long changed[PIUIO_PACKET_LONGS];
 	unsigned long b;
-	int i;
-	int set;
-	int update;
-	int rv;
+	int i, s;
+	int cur_set;
 
-	mutex_lock(&st->lock);
-
-	/* Error if the device has been disconnected */
-	if (!st->intf) {
-		mutex_unlock(&st->lock);
-		dev_warn(&st->intf->dev, "poll after device disconnected\n");
-		return;
+	switch (urb->status) {
+		case 0:			/* success */
+			break;
+		case -ECONNRESET:	/* unlink */
+		case -ENOENT:
+		case -ESHUTDOWN:
+			return;
+		default:		/* error */
+			goto resubmit;
 	}
 
-	/* Poll the device for the current group of inputs */
-	rv = do_piuio_read(st, inputs, st->group);
-	if (rv < 0) {
-		mutex_unlock(&st->lock);
-		dev_err(&st->intf->dev, "read failed in poll: %d\n", rv);
-		return;
-	}
+	/* Get the index of the previous input set */
+	cur_set = (piu->set + PIUIO_MULTIPLEX - 1) % PIUIO_MULTIPLEX;
 
-	/* Done with the USB interface */
-	mutex_unlock(&st->lock);
-
-	/* Note what has changed in this input set, then remember it for next
-	 * time */
-	current_set = &st->inputs[st->group * PIUIO_INPUT_SZ];
-	for (i = 0; i < PIUIO_INPUT_SZ; i++) {
-		changed[i] = inputs[i] ^ current_set[i];
-		current_set[i] = inputs[i];
+	/* Note what has changed in this input set, then store the inputs for
+	 * next time */
+	for (i = 0; i < PIUIO_PACKET_LONGS; i++) {
+		changed[i] = piu->new[i] ^ piu->old[cur_set][i];
+		piu->old[cur_set][i] = piu->new[i];
 	}
 
 	/* Changes only count when none of the corresponding inputs in other
 	 * sets are pressed.  Since "pressed" reads as 0, we can use & to knock
 	 * those bits out of the changes. */
-	for (set = 0; set < PIUIO_MULTIPLEX; set++) {
-		if (set == st->group)
+	for (s = 0; s < PIUIO_MULTIPLEX; s++) {
+		if (s == cur_set)
 			continue;
-		for (i = 0; i < PIUIO_INPUT_SZ; i++)
-			changed[i] &= st->inputs[set * PIUIO_INPUT_SZ + i];
+		for (i = 0; i < PIUIO_PACKET_LONGS; i++)
+			changed[i] &= piu->old[s][i];
 	}
 
 	/* Find and report any inputs which have changed state */
-	update = 0;
-	for (i = 0; i < PIUIO_INPUT_SZ; i++) {
-		/* While some bit is set... */
+	for (i = 0; i < PIUIO_PACKET_LONGS; i++) {
+		/* As long as some bit is still set... */
 		while (changed[i]) {
 			/* find the index of the first set bit and clear it */
 			b = __ffs(changed[i]);
 			clear_bit(b, &changed[i]);
 			/* and report the corresponding press or release. */
-			report_key(ipdev, i * BITS_PER_LONG + b,
-					!test_bit(b, &inputs[i]));
-			update = 1;
+			report_key(piu->dev, i * BITS_PER_LONG + b,
+					!test_bit(b, &piu->new[i]));
 		}
 	}
 
-	/* If we reported something, flush the generated input events */
-	if (update)
-		input_sync(ipdev->input);
+	/* Done reporting input events */
+	input_sync(piu->dev);
 
-	/* Rotate input sets */
-	st->group++;
-	st->group %= PIUIO_MULTIPLEX;
+resubmit:
+	i = usb_submit_urb(urb, GFP_ATOMIC);
+	if (i) {
+		dev_err(&piu->dev->dev,
+				"usb_submit_urb(new) failed, status %d", i);
+	}
 }
 
-static void setup_input_device(struct input_dev *idev, struct piuio_state *st)
+static void piuio_out_completed(struct urb *urb)
 {
+	struct piuio *piu = urb->context;
+	int ret = urb->status;
+
+	switch (ret) {
+		case 0:			/* success */
+			break;
+		case -ECONNRESET:	/* unlink */
+		case -ENOENT:
+		case -ESHUTDOWN:
+			return;
+		default:		/* error */
+			dev_warn(&piu->dev->dev, "out urb status %d received\n",
+					ret);
+			break;
+	}
+
+/* The code below assumes that PIUIO_MULTIPLEX is 4.  It could be made more
+ * general if anyone happens to have a setup where that isn't the case. */
+#if PIUIO_MULTIPLEX != 4
+#error The PIUIO driver only works when PIUIO_MULTIPLEX is 4.
+#endif
+
+	/* Switch to the next input set in rotation */
+	piu->set = (piu->set + 1) % PIUIO_MULTIPLEX;
+
+	/* Copy in the new lights and set multiplexer bits */
+	memcpy(piu->lights, piu->new_lights, PIUIO_PACKET_SZ);
+	piu->lights[0] &= ~3;
+	piu->lights[0] |= piu->set;
+	piu->lights[2] &= ~3;
+	piu->lights[2] |= piu->set;
+	
+	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
+	if (ret) {
+		dev_err(&piu->dev->dev,
+				"usb_submit_urb(lights) failed, status %d\n",
+				ret);
+	}
+}
+
+static int piuio_alloc_mem(struct piuio *piu)
+{
+	/* Freeing in case of error will be handled by piuio_free_mem */
+	if (!(piu->in = usb_alloc_urb(0, GFP_KERNEL)))
+		return -1;
+	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
+		return -1;
+	if (!(piu->new = usb_alloc_coherent(piu->usbdev, PIUIO_PACKET_SZ,
+					GFP_KERNEL, &piu->new_dma)))
+		return -1;
+	if (!(piu->lights = usb_alloc_coherent(piu->usbdev, PIUIO_PACKET_SZ,
+					GFP_KERNEL, &piu->out_dma)))
+		return -1;
+
+	return 0;
+}
+
+static void piuio_free_mem(struct piuio *piu)
+{
+	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->lights, piu->out_dma);
+	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->new, piu->new_dma);
+	usb_free_urb(piu->out);
+	usb_free_urb(piu->in);
+}
+
+static int piuio_open(struct input_dev *dev)
+{
+	struct piuio *piu = input_get_drvdata(dev);
+
+	/* Kick off the polling */
+	if (usb_submit_urb(piu->out, GFP_KERNEL))
+		return -EIO;
+	if (usb_submit_urb(piu->in, GFP_KERNEL)) {
+		usb_kill_urb(piu->out);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static void piuio_close(struct input_dev *dev)
+{
+	struct piuio *piu = input_get_drvdata(dev);
+
+	/* Stop polling */
+	usb_kill_urb(piu->in);
+	usb_kill_urb(piu->out);
+}
+
+static void setup_input_device(struct piuio *piu, struct device *parent)
+{
+	struct input_dev *dev = piu->dev;
 	int i;
 
 	/* Fill in basic fields */
-	idev->name = "PIUIO input";
-	idev->phys = st->input_phys;
-	usb_to_input_id(st->dev, &idev->id);
-	idev->dev.parent = &st->intf->dev;
-
-	/* Configure our buttons */
-	set_bit(EV_KEY, idev->evbit);
-	for (i = 0; i < PIUIO_NUM_INPUTS; i++)
-		set_bit(keycode_for_pin(i), idev->keybit);
+	dev->name = "PIUIO input";
+	dev->phys = piu->phys;
+	usb_to_input_id(piu->usbdev, &dev->id);
+	dev->dev.parent = parent;
 
 	/* HACK: Buttons are sufficient to trigger a /dev/input/js* device, but
 	 * for systemd (and consequently udev and Xorg) to consider us a
 	 * joystick, we have to have a set of XY absolute axes. */
-	set_bit(EV_ABS, idev->evbit);
-	set_bit(ABS_X, idev->absbit);
-	set_bit(ABS_Y, idev->absbit);
-	input_set_abs_params(idev, ABS_X, 0, 0, 0, 0);
-	input_set_abs_params(idev, ABS_Y, 0, 0, 0, 0);
+	set_bit(EV_KEY, dev->evbit);
+	set_bit(EV_ABS, dev->evbit);
+
+	/* Configure buttons */
+	for (i = 0; i < PIUIO_INPUTS; i++)
+		set_bit(keycode(i), dev->keybit);
+	clear_bit(0, dev->keybit);
+
+	/* Configure fake axes */
+	set_bit(ABS_X, dev->absbit);
+	set_bit(ABS_Y, dev->absbit);
+	input_set_abs_params(dev, ABS_X, 0, 0, 0, 0);
+	input_set_abs_params(dev, ABS_Y, 0, 0, 0, 0);
+
+	/* Set device callbacks */
+	dev->open = piuio_open;
+	dev->close = piuio_close;
+
+	/* Link input device back to PIUIO */
+	input_set_drvdata(dev, piu);
 }
 
-
-/* Set up a device being connected to this driver */
-static int piuio_probe(struct usb_interface *intf,
-		const struct usb_device_id *id)
+static int piuio_probe(struct usb_interface *iface,
+			 const struct usb_device_id *id)
 {
-	struct piuio_state *st;
-	struct input_polled_dev *ipdev;
-	int rv = -ENOMEM;
+	struct usb_device *usbdev = interface_to_usbdev(iface);
+	struct piuio *piu;
+	struct input_dev *dev;
+	int error = -ENOMEM;
 
-	/* Set up state structure and save a handle in the USB interface */
-	st = state_create(intf);
-	if (!st) {
-		dev_err(&intf->dev, "failed to allocate state\n");
+	/* Allocate state and input device */
+	piu = kzalloc(sizeof(struct piuio), GFP_KERNEL);
+	if (!piu)
 		return -ENOMEM;
-	}
-	usb_set_intfdata(intf, st);
 
-	/* Allocate and initialize the polled input device */
-	ipdev = input_allocate_polled_device();
-	if (!ipdev) {
-		dev_err(&intf->dev, "failed to allocate polled input device\n");
-		goto err_allocating_ipdev;
-	}
-	st->ipdev = ipdev;
+	dev = input_allocate_device();
+	if (!dev)
+		goto fail1;
 
-	ipdev->private = st;
-	ipdev->poll = piuio_input_poll;
-	ipdev->open = piuio_input_open;
-	ipdev->close = piuio_input_close;
-	ipdev->poll_interval = poll_interval_ms;
+	piu->dev = dev;
+	piu->usbdev = usbdev;
 
-	/* Set up the underlying input device */
-	setup_input_device(ipdev->input, st);
+	if (piuio_alloc_mem(piu))
+		goto fail2;
 
-	/* Register the polled input device */
-	rv = input_register_polled_device(ipdev);
-	if (rv) {
-		dev_err(&intf->dev, "failed to register polled input device\n");
-		goto err_registering_input;
-	}
+	/* Fill in state fields */
+	usb_make_path(usbdev, piu->phys, sizeof(piu->phys));
+	strlcat(piu->phys, "/input0", sizeof(piu->phys));
 
-	return rv;
+	/* Fill in input device fields */
+	setup_input_device(piu, &iface->dev);
 
-err_registering_input:
-	input_free_polled_device(ipdev);
-	usb_set_intfdata(intf, NULL);
-err_allocating_ipdev:
-	st->intf = NULL;
-	kref_put(&st->kref, state_destroy);
-	return rv;
+	/* Prepare URB for multiplexer and lights */
+	piu->cr_out.bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+	piu->cr_out.bRequest = cpu_to_le16(PIUIO_MSG_REQ),
+	piu->cr_out.wValue = cpu_to_le16(PIUIO_MSG_VAL),
+	piu->cr_out.wIndex = cpu_to_le16(PIUIO_MSG_IDX),
+	piu->cr_out.wLength = cpu_to_le16(PIUIO_PACKET_SZ),
+	usb_fill_control_urb(piu->out, usbdev, usb_sndctrlpipe(usbdev, 0),
+			(void *) &piu->cr_out, piu->lights, PIUIO_PACKET_SZ,
+			piuio_out_completed, piu);
+	piu->out->transfer_dma = piu->out_dma;
+	piu->out->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
+
+	/* Prepare URB for inputs */
+	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
+	piu->cr_in.bRequest = cpu_to_le16(PIUIO_MSG_REQ),
+	piu->cr_in.wValue = cpu_to_le16(PIUIO_MSG_VAL),
+	piu->cr_in.wIndex = cpu_to_le16(PIUIO_MSG_IDX),
+	piu->cr_in.wLength = cpu_to_le16(PIUIO_PACKET_SZ),
+	usb_fill_control_urb(piu->in, usbdev, usb_rcvctrlpipe(usbdev, 0),
+			(void *) &piu->cr_in, piu->new, PIUIO_PACKET_SZ,
+			piuio_in_completed, piu);
+	piu->in->transfer_dma = piu->out_dma;
+	piu->in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
+
+	/* Register input device */
+	error = input_register_device(piu->dev);
+	if (error)
+		goto fail2;
+
+	usb_set_intfdata(iface, piu);
+	device_set_wakeup_enable(&usbdev->dev, 1);
+	return 0;
+
+fail2:	
+	piuio_free_mem(piu);
+fail1:	
+	input_free_device(dev);
+	kfree(piu);
+	return error;
 }
 
-/* Clean up when a device is disconnected */
 static void piuio_disconnect(struct usb_interface *intf)
 {
-	struct piuio_state *st = usb_get_intfdata(intf);
+	struct piuio *piu = usb_get_intfdata(intf);
 
-	input_unregister_polled_device(st->ipdev);
-	input_free_polled_device(st->ipdev);
 	usb_set_intfdata(intf, NULL);
-
-	/* Signal to any stragglers that the device is gone */
-	mutex_lock(&st->lock);
-	st->intf = NULL;
-	mutex_unlock(&st->lock);
-
-	kref_put(&st->kref, state_destroy);
+	if (piu) {
+		usb_kill_urb(piu->in);
+		usb_kill_urb(piu->out);
+		input_unregister_device(piu->dev);
+		piuio_free_mem(piu);
+		kfree(piu);
+	}
 }
 
-/* Device driver handlers */
+static struct usb_device_id piuio_id_table [] = {
+	/* Python WDM2 Encoder used for PIUIO boards */
+	{ USB_DEVICE(0x0547, 0x1002) },
+	{},
+};
+
+MODULE_DEVICE_TABLE(usb, piuio_id_table);
+
 static struct usb_driver piuio_driver = {
 	.name =		"piuio",
 	.probe =	piuio_probe,
 	.disconnect =	piuio_disconnect,
-	.id_table =	piuio_ids,
-	.supports_autosuspend = 1,
+	.id_table =	piuio_id_table,
 };
 
-/* This line requires kernel 3.3 or higher */
 module_usb_driver(piuio_driver);
