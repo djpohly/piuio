@@ -19,9 +19,12 @@
 #include <linux/usb.h>
 #include <linux/usb/input.h>
 
+
 /*
- * Module information
+ * Device and protocol definitions
  */
+#define USB_VENDOR_ID_ANCHOR 0x0547
+#define USB_PRODUCT_ID_PYTHON2 0x1002
 
 /* USB message used to communicate with the device */
 #define PIUIO_MSG_REQ 0xae
@@ -386,9 +389,13 @@ static void piuio_disconnect(struct usb_interface *intf)
 	kfree(piu);
 }
 
+
+/*
+ * USB driver and module definitions
+ */
 static struct usb_device_id piuio_id_table [] = {
 	/* Python WDM2 Encoder used for PIUIO boards */
-	{ USB_DEVICE(0x0547, 0x1002) },
+	{ USB_DEVICE(USB_VENDOR_ID_ANCHOR, USB_PRODUCT_ID_PYTHON2) },
 	{},
 };
 
