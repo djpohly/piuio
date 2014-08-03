@@ -300,6 +300,26 @@ static void setup_input_device(struct piuio *piu, struct device *parent)
 	input_set_drvdata(dev, piu);
 }
 
+static int init_piuio(struct piuio *piu, struct input_dev *dev,
+		struct usb_device *usbdev)
+{
+	int ret;
+
+	piu->dev = dev;
+	piu->usbdev = usbdev;
+
+	ret = piuio_alloc_mem(piu);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+static void destroy_piuio(struct piuio *piu)
+{
+	piuio_free_mem(piu);
+}
+
 static int piuio_probe(struct usb_interface *iface,
 			 const struct usb_device_id *id)
 {
@@ -317,10 +337,7 @@ static int piuio_probe(struct usb_interface *iface,
 	if (!dev)
 		goto fail1;
 
-	piu->dev = dev;
-	piu->usbdev = usbdev;
-
-	if (piuio_alloc_mem(piu))
+	if (init_piuio(piu, dev, usbdev))
 		goto fail2;
 
 	/* Fill in state fields */
@@ -364,7 +381,7 @@ static int piuio_probe(struct usb_interface *iface,
 	return 0;
 
 fail2:	
-	piuio_free_mem(piu);
+	destroy_piuio(piu);
 fail1:	
 	input_free_device(dev);
 	kfree(piu);
@@ -380,7 +397,7 @@ static void piuio_disconnect(struct usb_interface *intf)
 		usb_kill_urb(piu->in);
 		usb_kill_urb(piu->out);
 		input_unregister_device(piu->dev);
-		piuio_free_mem(piu);
+		destroy_piuio(piu);
 		kfree(piu);
 	}
 }
