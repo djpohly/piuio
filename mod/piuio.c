@@ -340,9 +340,8 @@ static int piuio_probe(struct usb_interface *iface,
 
 	/* Allocate PIUIO state and input device */
 	piu = kzalloc(sizeof(struct piuio), GFP_KERNEL);
-	if (!piu) {
+	if (!piu)
 		return ret;
-	}
 
 	dev = input_allocate_device();
 	if (!dev) {
@@ -353,22 +352,22 @@ static int piuio_probe(struct usb_interface *iface,
 	/* Initialize PIUIO state and input device */
 	ret = init_piuio(piu, dev, usbdev);
 	if (ret)
-		goto fail1;
+		goto err;
 
 	init_piuio_input(piu, &iface->dev);
 
 	/* Register input device */
 	ret = input_register_device(piu->dev);
 	if (ret)
-		goto fail2;
+		goto err;
 
+	/* Final USB setup */
 	usb_set_intfdata(iface, piu);
 	device_set_wakeup_enable(&usbdev->dev, 1);
 	return 0;
 
-fail2:	
+err:
 	destroy_piuio(piu);
-fail1:	
 	input_free_device(dev);
 	kfree(piu);
 	return ret;
@@ -379,13 +378,16 @@ static void piuio_disconnect(struct usb_interface *intf)
 	struct piuio *piu = usb_get_intfdata(intf);
 
 	usb_set_intfdata(intf, NULL);
-	if (piu) {
-		usb_kill_urb(piu->in);
-		usb_kill_urb(piu->out);
-		input_unregister_device(piu->dev);
-		destroy_piuio(piu);
-		kfree(piu);
+	if (!piu) {
+		dev_err(&intf->dev, "disconnecting non-existent PIUIO\n");
+		return;
 	}
+
+	usb_kill_urb(piu->in);
+	usb_kill_urb(piu->out);
+	input_unregister_device(piu->dev);
+	destroy_piuio(piu);
+	kfree(piu);
 }
 
 static struct usb_device_id piuio_id_table [] = {
