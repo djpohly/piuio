@@ -31,12 +31,11 @@
 #define PIUIO_MSG_VAL 0
 #define PIUIO_MSG_IDX 0
 
-/* Number of usable inputs */
-#define PIUIO_INPUTS 48
+#define PIUIO_MSG_SZ 8
+#define PIUIO_MSG_LONGS (PIUIO_MSG_SZ / sizeof(unsigned long))
 
-/* Size of input and output packets */
-#define PIUIO_PACKET_SZ 8
-#define PIUIO_PACKET_LONGS (PIUIO_PACKET_SZ / sizeof(unsigned long))
+/* Number of usable inputs per set */
+#define PIUIO_INPUTS 48
 
 /* Number of sets of inputs multiplexed together */
 #define PIUIO_MULTIPLEX 4
@@ -70,10 +69,10 @@ struct piuio {
 	struct urb *in, *out;
 	struct usb_ctrlrequest cr_in, cr_out;
 
-	unsigned long old[PIUIO_MULTIPLEX][PIUIO_PACKET_LONGS];
+	unsigned long old[PIUIO_MULTIPLEX][PIUIO_MSG_LONGS];
 	unsigned long *new;
 	unsigned char *lights;
-	unsigned char new_lights[PIUIO_PACKET_SZ];
+	unsigned char new_lights[PIUIO_MSG_SZ];
 
 	dma_addr_t new_dma;
 	dma_addr_t out_dma;
@@ -110,7 +109,7 @@ static void report_key(struct input_dev *dev, unsigned int pin, int press)
 static void piuio_in_completed(struct urb *urb)
 {
 	struct piuio *piu = urb->context;
-	unsigned long changed[PIUIO_PACKET_LONGS];
+	unsigned long changed[PIUIO_MSG_LONGS];
 	unsigned long b;
 	int i, s;
 	int cur_set;
@@ -131,7 +130,7 @@ static void piuio_in_completed(struct urb *urb)
 
 	/* Note what has changed in this input set, then store the inputs for
 	 * next time */
-	for (i = 0; i < PIUIO_PACKET_LONGS; i++) {
+	for (i = 0; i < PIUIO_MSG_LONGS; i++) {
 		changed[i] = piu->new[i] ^ piu->old[cur_set][i];
 		piu->old[cur_set][i] = piu->new[i];
 	}
@@ -142,12 +141,12 @@ static void piuio_in_completed(struct urb *urb)
 	for (s = 0; s < PIUIO_MULTIPLEX; s++) {
 		if (s == cur_set)
 			continue;
-		for (i = 0; i < PIUIO_PACKET_LONGS; i++)
+		for (i = 0; i < PIUIO_MSG_LONGS; i++)
 			changed[i] &= piu->old[s][i];
 	}
 
 	/* Find and report any inputs which have changed state */
-	for (i = 0; i < PIUIO_PACKET_LONGS; i++) {
+	for (i = 0; i < PIUIO_MSG_LONGS; i++) {
 		/* As long as some bit is still set... */
 		while (changed[i]) {
 			/* find the index of the first set bit and clear it */
@@ -198,7 +197,7 @@ static void piuio_out_completed(struct urb *urb)
 	piu->set = (piu->set + 1) % PIUIO_MULTIPLEX;
 
 	/* Copy in the new lights and set multiplexer bits */
-	memcpy(piu->lights, piu->new_lights, PIUIO_PACKET_SZ);
+	memcpy(piu->lights, piu->new_lights, PIUIO_MSG_SZ);
 	piu->lights[0] &= ~3;
 	piu->lights[0] |= piu->set;
 	piu->lights[2] &= ~3;
@@ -282,10 +281,10 @@ static int init_piuio(struct piuio *piu, struct input_dev *dev,
 		return -ENOMEM;
 	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
 		return -ENOMEM;
-	if (!(piu->new = usb_alloc_coherent(usbdev, PIUIO_PACKET_SZ,
+	if (!(piu->new = usb_alloc_coherent(usbdev, PIUIO_MSG_SZ,
 					GFP_KERNEL, &piu->new_dma)))
 		return -ENOMEM;
-	if (!(piu->lights = usb_alloc_coherent(usbdev, PIUIO_PACKET_SZ,
+	if (!(piu->lights = usb_alloc_coherent(usbdev, PIUIO_MSG_SZ,
 					GFP_KERNEL, &piu->out_dma)))
 		return -ENOMEM;
 
@@ -299,9 +298,9 @@ static int init_piuio(struct piuio *piu, struct input_dev *dev,
 	piu->cr_out.bRequest = cpu_to_le16(PIUIO_MSG_REQ),
 	piu->cr_out.wValue = cpu_to_le16(PIUIO_MSG_VAL),
 	piu->cr_out.wIndex = cpu_to_le16(PIUIO_MSG_IDX),
-	piu->cr_out.wLength = cpu_to_le16(PIUIO_PACKET_SZ),
+	piu->cr_out.wLength = cpu_to_le16(PIUIO_MSG_SZ),
 	usb_fill_control_urb(piu->out, usbdev, usb_sndctrlpipe(usbdev, 0),
-			(void *) &piu->cr_out, piu->lights, PIUIO_PACKET_SZ,
+			(void *) &piu->cr_out, piu->lights, PIUIO_MSG_SZ,
 			piuio_out_completed, piu);
 	piu->out->transfer_dma = piu->out_dma;
 	piu->out->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
@@ -311,9 +310,9 @@ static int init_piuio(struct piuio *piu, struct input_dev *dev,
 	piu->cr_in.bRequest = cpu_to_le16(PIUIO_MSG_REQ),
 	piu->cr_in.wValue = cpu_to_le16(PIUIO_MSG_VAL),
 	piu->cr_in.wIndex = cpu_to_le16(PIUIO_MSG_IDX),
-	piu->cr_in.wLength = cpu_to_le16(PIUIO_PACKET_SZ),
+	piu->cr_in.wLength = cpu_to_le16(PIUIO_MSG_SZ),
 	usb_fill_control_urb(piu->in, usbdev, usb_rcvctrlpipe(usbdev, 0),
-			(void *) &piu->cr_in, piu->new, PIUIO_PACKET_SZ,
+			(void *) &piu->cr_in, piu->new, PIUIO_MSG_SZ,
 			piuio_in_completed, piu);
 	piu->in->transfer_dma = piu->out_dma;
 	piu->in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
@@ -323,8 +322,8 @@ static int init_piuio(struct piuio *piu, struct input_dev *dev,
 
 static void destroy_piuio(struct piuio *piu)
 {
-	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->lights, piu->out_dma);
-	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->new, piu->new_dma);
+	usb_free_coherent(piu->usbdev, PIUIO_MSG_SZ, piu->lights, piu->out_dma);
+	usb_free_coherent(piu->usbdev, PIUIO_MSG_SZ, piu->new, piu->new_dma);
 	usb_free_urb(piu->out);
 	usb_free_urb(piu->in);
 }
