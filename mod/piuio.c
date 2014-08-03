@@ -239,31 +239,6 @@ static void piuio_close(struct input_dev *dev)
 	/* XXX Kill the lights! */
 }
 
-static int piuio_alloc_mem(struct piuio *piu)
-{
-	/* Freeing in case of error will be handled by piuio_free_mem */
-	if (!(piu->in = usb_alloc_urb(0, GFP_KERNEL)))
-		return -1;
-	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
-		return -1;
-	if (!(piu->new = usb_alloc_coherent(piu->usbdev, PIUIO_PACKET_SZ,
-					GFP_KERNEL, &piu->new_dma)))
-		return -1;
-	if (!(piu->lights = usb_alloc_coherent(piu->usbdev, PIUIO_PACKET_SZ,
-					GFP_KERNEL, &piu->out_dma)))
-		return -1;
-
-	return 0;
-}
-
-static void piuio_free_mem(struct piuio *piu)
-{
-	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->lights, piu->out_dma);
-	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->new, piu->new_dma);
-	usb_free_urb(piu->out);
-	usb_free_urb(piu->in);
-}
-
 static void setup_input_device(struct piuio *piu, struct device *parent)
 {
 	struct input_dev *dev = piu->dev;
@@ -303,21 +278,30 @@ static void setup_input_device(struct piuio *piu, struct device *parent)
 static int init_piuio(struct piuio *piu, struct input_dev *dev,
 		struct usb_device *usbdev)
 {
-	int ret;
+	/* If this function returns an error, call destroy_piuio */
+	if (!(piu->in = usb_alloc_urb(0, GFP_KERNEL)))
+		return -ENOMEM;
+	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
+		return -ENOMEM;
+	if (!(piu->new = usb_alloc_coherent(usbdev, PIUIO_PACKET_SZ,
+					GFP_KERNEL, &piu->new_dma)))
+		return -ENOMEM;
+	if (!(piu->lights = usb_alloc_coherent(usbdev, PIUIO_PACKET_SZ,
+					GFP_KERNEL, &piu->out_dma)))
+		return -ENOMEM;
 
 	piu->dev = dev;
 	piu->usbdev = usbdev;
-
-	ret = piuio_alloc_mem(piu);
-	if (ret)
-		return ret;
 
 	return 0;
 }
 
 static void destroy_piuio(struct piuio *piu)
 {
-	piuio_free_mem(piu);
+	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->lights, piu->out_dma);
+	usb_free_coherent(piu->usbdev, PIUIO_PACKET_SZ, piu->new, piu->new_dma);
+	usb_free_urb(piu->out);
+	usb_free_urb(piu->in);
 }
 
 static int piuio_probe(struct usb_interface *iface,
