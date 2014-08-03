@@ -312,21 +312,25 @@ static int piuio_probe(struct usb_interface *iface,
 	struct usb_device *usbdev = interface_to_usbdev(iface);
 	struct piuio *piu;
 	struct input_dev *dev;
-	int error = -ENOMEM;
+	int ret = -ENOMEM;
 
-	/* Allocate state and input device */
+	/* Allocate PIUIO state and input device */
 	piu = kzalloc(sizeof(struct piuio), GFP_KERNEL);
-	if (!piu)
-		return -ENOMEM;
+	if (!piu) {
+		return ret;
+	}
 
 	dev = input_allocate_device();
-	if (!dev)
+	if (!dev) {
+		kfree(piu);
+		return ret;
+	}
+
+	/* Initialize PIUIO state and input device */
+	ret = init_piuio(piu, dev, usbdev);
+	if (ret)
 		goto fail1;
 
-	if (init_piuio(piu, dev, usbdev))
-		goto fail2;
-
-	/* Fill in input device fields */
 	setup_input_device(piu, &iface->dev);
 
 	/* Prepare URB for multiplexer and lights */
@@ -354,8 +358,8 @@ static int piuio_probe(struct usb_interface *iface,
 	piu->in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
 	/* Register input device */
-	error = input_register_device(piu->dev);
-	if (error)
+	ret = input_register_device(piu->dev);
+	if (ret)
 		goto fail2;
 
 	usb_set_intfdata(iface, piu);
@@ -367,7 +371,7 @@ fail2:
 fail1:	
 	input_free_device(dev);
 	kfree(piu);
-	return error;
+	return ret;
 }
 
 static void piuio_disconnect(struct usb_interface *intf)
