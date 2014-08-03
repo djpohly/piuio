@@ -82,11 +82,11 @@ struct piuio {
 
 
 /*
- * Mapping from input pins to kernel keycodes.
- * Use the joystick buttons first, then the extra "trigger happy" range.
+ * Auxiliary functions for reporting input events
  */
 static int keycode(unsigned int pin)
 {
+	/* Use joystick buttons first, then the extra "trigger happy" range. */
 	if (pin >= PIUIO_INPUTS)
 		return KEY_RESERVED;
 	if (pin < 16)
@@ -106,6 +106,10 @@ static void report_key(struct input_dev *dev, unsigned int pin, int press)
 	input_report_key(dev, keycode(pin), press);
 }
 
+
+/*
+ * URB completion handlers
+ */
 static void piuio_in_completed(struct urb *urb)
 {
 	struct piuio *piu = urb->context;
@@ -211,6 +215,10 @@ static void piuio_out_completed(struct urb *urb)
 	}
 }
 
+
+/*
+ * Input device events
+ */
 static int piuio_open(struct input_dev *dev)
 {
 	struct piuio *piu = input_get_drvdata(dev);
@@ -235,9 +243,14 @@ static void piuio_close(struct input_dev *dev)
 	usb_kill_urb(piu->out);
 
 	/* XXX Kill the lights! */
+	/* XXX Re-initialize parts of piuio struct */
 }
 
-static void init_piuio_input(struct piuio *piu, struct device *parent)
+
+/*
+ * Structure initialization and destruction
+ */
+static void piuio_input_init(struct piuio *piu, struct device *parent)
 {
 	struct input_dev *dev = piu->dev;
 	int i;
@@ -273,10 +286,10 @@ static void init_piuio_input(struct piuio *piu, struct device *parent)
 	input_set_drvdata(dev, piu);
 }
 
-static int init_piuio(struct piuio *piu, struct input_dev *dev,
+static int piuio_init(struct piuio *piu, struct input_dev *dev,
 		struct usb_device *usbdev)
 {
-	/* If this function returns an error, call destroy_piuio */
+	/* If this function returns an error, call piuio_destroy */
 	if (!(piu->in = usb_alloc_urb(0, GFP_KERNEL)))
 		return -ENOMEM;
 	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
@@ -320,14 +333,19 @@ static int init_piuio(struct piuio *piu, struct input_dev *dev,
 	return 0;
 }
 
-static void destroy_piuio(struct piuio *piu)
+static void piuio_destroy(struct piuio *piu)
 {
+	/* These handle NULL gracefully, so we can call this if init fails */
 	usb_free_coherent(piu->usbdev, PIUIO_MSG_SZ, piu->lights, piu->out_dma);
 	usb_free_coherent(piu->usbdev, PIUIO_MSG_SZ, piu->new, piu->new_dma);
 	usb_free_urb(piu->out);
 	usb_free_urb(piu->in);
 }
 
+
+/*
+ * USB connect and disconnect events
+ */
 static int piuio_probe(struct usb_interface *iface,
 			 const struct usb_device_id *id)
 {
@@ -348,11 +366,11 @@ static int piuio_probe(struct usb_interface *iface,
 	}
 
 	/* Initialize PIUIO state and input device */
-	ret = init_piuio(piu, dev, usbdev);
+	ret = piuio_init(piu, dev, usbdev);
 	if (ret)
 		goto err;
 
-	init_piuio_input(piu, &iface->dev);
+	piuio_input_init(piu, &iface->dev);
 
 	/* Register input device */
 	ret = input_register_device(piu->dev);
@@ -365,7 +383,7 @@ static int piuio_probe(struct usb_interface *iface,
 	return 0;
 
 err:
-	destroy_piuio(piu);
+	piuio_destroy(piu);
 	input_free_device(dev);
 	kfree(piu);
 	return ret;
@@ -384,7 +402,7 @@ static void piuio_disconnect(struct usb_interface *intf)
 	usb_kill_urb(piu->in);
 	usb_kill_urb(piu->out);
 	input_unregister_device(piu->dev);
-	destroy_piuio(piu);
+	piuio_destroy(piu);
 	kfree(piu);
 }
 
