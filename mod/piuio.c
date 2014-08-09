@@ -127,7 +127,7 @@ static void piuio_in_completed(struct urb *urb)
 			return;
 		default:		/* error */
 			dev_warn(&piu->dev->dev, "in urb status %d received\n",
-					ret);
+					urb->status);
 			goto resubmit;
 	}
 
