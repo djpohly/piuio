@@ -57,8 +57,6 @@
  * @new:	Buffer for the @in URB
  * @lights:	Buffer for the @out URB
  * @new_lights:	Staging for the @lights buffer
- * @new_dma:	DMA address for @in URB
- * @out_dma:	DMA address for @out URB
  * @set:	current set of inputs to read, (0 .. PIUIO_MULTIPLEX - 1)
  */
 struct piuio {
@@ -70,13 +68,10 @@ struct piuio {
 	struct usb_ctrlrequest cr_in, cr_out;
 
 	unsigned long old[PIUIO_MULTIPLEX][PIUIO_MSG_LONGS];
-	unsigned long *new;
-	unsigned char *lights;
+	unsigned long new[PIUIO_MSG_LONGS];
+	unsigned char lights[PIUIO_MSG_SZ];
 	unsigned char new_lights[PIUIO_MSG_SZ];
 
-	dma_addr_t new_dma;
-	dma_addr_t out_dma;
-	
 	int set;
 };
 
@@ -296,12 +291,6 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 		return -ENOMEM;
 	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
 		return -ENOMEM;
-	if (!(piu->new = usb_alloc_coherent(usbdev, PIUIO_MSG_SZ,
-					GFP_KERNEL, &piu->new_dma)))
-		return -ENOMEM;
-	if (!(piu->lights = usb_alloc_coherent(usbdev, PIUIO_MSG_SZ,
-					GFP_KERNEL, &piu->out_dma)))
-		return -ENOMEM;
 
 	piu->dev = dev;
 	piu->usbdev = usbdev;
@@ -317,8 +306,6 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 	usb_fill_control_urb(piu->out, usbdev, usb_sndctrlpipe(usbdev, 0),
 			(void *) &piu->cr_out, piu->lights, PIUIO_MSG_SZ,
 			piuio_out_completed, piu);
-	piu->out->transfer_dma = piu->out_dma;
-	piu->out->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
 	/* Prepare URB for inputs */
 	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
@@ -329,8 +316,6 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 	usb_fill_control_urb(piu->in, usbdev, usb_rcvctrlpipe(usbdev, 0),
 			(void *) &piu->cr_in, piu->new, PIUIO_MSG_SZ,
 			piuio_in_completed, piu);
-	piu->in->transfer_dma = piu->out_dma;
-	piu->in->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
 	return 0;
 }
@@ -338,8 +323,6 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 static void piuio_destroy(struct piuio *piu)
 {
 	/* These handle NULL gracefully, so we can call this if init fails */
-	usb_free_coherent(piu->usbdev, PIUIO_MSG_SZ, piu->lights, piu->out_dma);
-	usb_free_coherent(piu->usbdev, PIUIO_MSG_SZ, piu->new, piu->new_dma);
 	usb_free_urb(piu->out);
 	usb_free_urb(piu->in);
 }
