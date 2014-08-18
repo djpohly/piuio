@@ -2,15 +2,9 @@ PIUIO input driver for Linux
 ============================
 
 This is a driver for the PIUIO arcade I/O board that maps panels and buttons to
-a standard Linux event interface, typically appearing as a joystick.  It is
+a standard Linux event interface which typically appears as a joystick.  It is
 coded assuming the default configuration where four sets of inputs are attached
 to a multiplexer.
-
-
-Module parameters
------------------
-
-There are currently no parameters for this module.
 
 
 Compiling and installing
