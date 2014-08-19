@@ -2,9 +2,7 @@ PIUIO input driver for Linux
 ============================
 
 This is a driver for the PIUIO arcade I/O board that maps panels and buttons to
-a standard Linux event interface which typically appears as a joystick.  It is
-coded assuming the default configuration where four sets of inputs are attached
-to a multiplexer.
+a standard Linux event interface which typically appears as a joystick.
 
 
 Compiling and installing
@@ -33,36 +31,47 @@ Since this module uses the input subsystem, you can use standard tools such as
 not implemented in the driver.
 
 
-How it works
-------------
+Implementation and accuracy
+---------------------------
 
-### USB protocol ###
-
-The PIUIO device uses USB control messages to communicate with a driver: one
-message to set the outputs, and another to retrieve the inputs.  However,
-every USB control message consists of a request and a response, only one of
-which may carry data.  So we cannot combine the output and input messages
-into a single round-trip to and from the device; two round-trips are required.
+This driver is designed to provide the fastest possible response to
+inputs, and thereby the best possible timing accuracy.  Below are some of
+the considerations made in reducing the time from triggering an input
+sensor to generating the input event.
 
 
-### Multiplexer ###
+### Polled input devices ###
+
+The Linux kernel provides the `input_polldev` framework for input devices
+such as the PIUIO which must be polled rather than generating interrupts.
+This framework allows the driver to define a `poll` function which is
+called at regular intervals to generate input events.
+
+Unfortunately, this framework is designed for general input devices, such
+as keyboards, where accurate event timing is not critical.  As a result
+the mechanics behind its implementation can lead to extra time between
+polls.  This driver implements polling itself to avoid the extra delay
+(which is compounded by the use of a multiplexer as described below).
+
+
+### USB protocol and multiplexer ###
 
 PIUIO units are typically attached to a four-way multiplexer so that four
 sensors can be connected to each input.  If any one sensor is triggered, the
 input is considered to be pressed.  The current implementation assumes that
-such a multiplexer is in use.
+such a multiplexer is in use.  At a low level, the driver must send a USB
+output message to select one set of sensors from the multiplexer, then an
+input message to read their values.
 
-At a low level, the driver must use an output message to select one set of
-sensors from the multiplexer, then an input message to read their values.
-The reason this is significant is that the PIUIO card is a USB device.
-Every USB message consists of a request from the host and a response from the
-device, only one of which may carry data.  Therefore sending an output
-message to set up the multiplexer followed by an input message to request the
-sensor state will require *two* round-trips from host to device.
+However, the USB standard requires that each message consist of a request
+from the host and a response from the device, and only one of those may
+carry data.  Because of this, the output message to set up the multiplexer
+and the input message to request the sensor state cannot be combined in
+one round-trip from host to device and back; two round-trips are
+necessary.
 
-To get the best possible timing accuracy (i.e. the least amount of delay
-between triggering a sensor and registering the input event), these internal
-mechanics have to be taken into account.
+To get the best possible timing accuracy, these internal mechanics have to
+be taken into account.
 
 
 ### Staggered input reporting ###
@@ -99,3 +108,15 @@ and hitting all four related sensors will bring the average delay to 1 RTT.
 Given that the typical round-trip response time for a PIUIO device is 250
 μs, this means this is the first PIUIO driver capable of sub-millisecond
 accuracy on average.
+
+
+### Message queueing ###
+
+However, there is something else that can be done to reduce delay and
+improve accuracy.  USB messages can be queued asynchronously so that they
+are sent as quickly as possible, one after the other.  There is no need to
+wait for an output message to complete before sending the following input
+message, and vice versa.  This means that one response can be processed
+while the next request is already being sent, using the USB link much more
+efficiently.  In testing, the asynchronous driver was able to handle
+requests 35–40% faster than synchronous drivers.
