@@ -298,21 +298,21 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 	strlcat(piu->phys, "/input0", sizeof(piu->phys));
 
 	/* Prepare URB for multiplexer and lights */
-	piu->cr_out.bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-	piu->cr_out.bRequest = cpu_to_le16(PIUIO_MSG_REQ),
-	piu->cr_out.wValue = cpu_to_le16(PIUIO_MSG_VAL),
-	piu->cr_out.wIndex = cpu_to_le16(PIUIO_MSG_IDX),
-	piu->cr_out.wLength = cpu_to_le16(PIUIO_MSG_SZ),
+	piu->cr_out.bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
+	piu->cr_out.bRequest = cpu_to_le16(PIUIO_MSG_REQ);
+	piu->cr_out.wValue = cpu_to_le16(PIUIO_MSG_VAL);
+	piu->cr_out.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
+	piu->cr_out.wLength = cpu_to_le16(PIUIO_MSG_SZ);
 	usb_fill_control_urb(piu->out, usbdev, usb_sndctrlpipe(usbdev, 0),
 			(void *) &piu->cr_out, piu->lights, PIUIO_MSG_SZ,
 			piuio_out_completed, piu);
 
 	/* Prepare URB for inputs */
-	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE,
-	piu->cr_in.bRequest = cpu_to_le16(PIUIO_MSG_REQ),
-	piu->cr_in.wValue = cpu_to_le16(PIUIO_MSG_VAL),
-	piu->cr_in.wIndex = cpu_to_le16(PIUIO_MSG_IDX),
-	piu->cr_in.wLength = cpu_to_le16(PIUIO_MSG_SZ),
+	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
+	piu->cr_in.bRequest = cpu_to_le16(PIUIO_MSG_REQ);
+	piu->cr_in.wValue = cpu_to_le16(PIUIO_MSG_VAL);
+	piu->cr_in.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
+	piu->cr_in.wLength = cpu_to_le16(PIUIO_MSG_SZ);
 	usb_fill_control_urb(piu->in, usbdev, usb_rcvctrlpipe(usbdev, 0),
 			(void *) &piu->cr_in, piu->new, PIUIO_MSG_SZ,
 			piuio_in_completed, piu);
