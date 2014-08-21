@@ -364,7 +364,6 @@ static int piuio_probe(struct usb_interface *iface,
 
 	/* Final USB setup */
 	usb_set_intfdata(iface, piu);
-	device_set_wakeup_enable(&usbdev->dev, 1);
 	return 0;
 
 err:
