@@ -17,6 +17,6 @@ all: modules ;
 install: all modules_install ;
 
 %:
-	make -C $(KDIR) M=$(PWD) $@
+	make -C $(KDIR) M=$(shell pwd) $@
 
 endif
