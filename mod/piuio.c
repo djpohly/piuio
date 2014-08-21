@@ -15,6 +15,7 @@
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/bitops.h>
+#include <linux/wait.h>
 #include <linux/input.h>
 #include <linux/usb.h>
 #include <linux/usb/input.h>
@@ -66,6 +67,7 @@ struct piuio {
 	struct usb_device *usbdev;
 	struct urb *in, *out;
 	struct usb_ctrlrequest cr_in, cr_out;
+	wait_queue_head_t shutdown_wait;
 
 	unsigned long old[PIUIO_MULTIPLEX][PIUIO_MSG_LONGS];
 	unsigned long new[PIUIO_MSG_LONGS];
@@ -119,7 +121,7 @@ static void piuio_in_completed(struct urb *urb)
 		case -ECONNRESET:	/* unlink */
 		case -ENOENT:
 		case -ESHUTDOWN:
-			return;
+			goto in_finished;
 		default:		/* error */
 			dev_warn(&piu->dev->dev, "in urb status %d received\n",
 					urb->status);
@@ -168,6 +170,10 @@ resubmit:
 		dev_err(&piu->dev->dev,
 				"usb_submit_urb(new) failed, status %d", i);
 	}
+
+in_finished:
+	/* Let any waiting threads know we're done here */
+	wake_up(&piu->shutdown_wait);
 }
 
 static void piuio_out_completed(struct urb *urb)
@@ -181,7 +187,7 @@ static void piuio_out_completed(struct urb *urb)
 		case -ECONNRESET:	/* unlink */
 		case -ENOENT:
 		case -ESHUTDOWN:
-			return;
+			goto out_finished;
 		default:		/* error */
 			dev_warn(&piu->dev->dev, "out urb status %d received\n",
 					ret);
@@ -210,6 +216,10 @@ static void piuio_out_completed(struct urb *urb)
 				"usb_submit_urb(lights) failed, status %d\n",
 				ret);
 	}
+
+out_finished:
+	/* Let any waiting threads know we're done here */
+	wake_up(&piu->shutdown_wait);
 }
 
 
@@ -235,9 +245,13 @@ static void piuio_close(struct input_dev *dev)
 {
 	struct piuio *piu = input_get_drvdata(dev);
 
-	/* Stop polling */
-	usb_kill_urb(piu->in);
-	usb_kill_urb(piu->out);
+	/* Stop polling, but wait for the last requests to complete */
+	usb_block_urb(piu->in);
+	usb_block_urb(piu->out);
+	wait_event(piu->shutdown_wait, atomic_read(&piu->in->use_count) == 0 &&
+			atomic_read(&piu->out->use_count) == 0);
+	usb_unblock_urb(piu->in);
+	usb_unblock_urb(piu->out);
 
 	/* XXX Kill the lights! */
 	/* XXX Re-initialize parts of piuio struct */
@@ -291,6 +305,8 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 		return -ENOMEM;
 	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
 		return -ENOMEM;
+
+	init_waitqueue_head(&piu->shutdown_wait);
 
 	piu->dev = dev;
 	piu->usbdev = usbdev;
