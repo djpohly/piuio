@@ -296,10 +296,10 @@ static void piuio_input_init(struct piuio *piu, struct device *parent)
 static int piuio_init(struct piuio *piu, struct input_dev *dev,
 		struct usb_device *usbdev)
 {
-	/* If this function returns an error, call piuio_destroy */
-	if (!(piu->in = usb_alloc_urb(0, GFP_KERNEL)))
-		return -ENOMEM;
-	if (!(piu->out = usb_alloc_urb(0, GFP_KERNEL)))
+	/* If this function returns an error, piuio_destroy will be called */
+	piu->in = usb_alloc_urb(0, GFP_KERNEL);
+	piu->out = usb_alloc_urb(0, GFP_KERNEL);
+	if (!piu->in || !piu->out)
 		return -ENOMEM;
 
 	init_waitqueue_head(&piu->shutdown_wait);
