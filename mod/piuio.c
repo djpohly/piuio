@@ -16,6 +16,7 @@
 #include <linux/errno.h>
 #include <linux/bitops.h>
 #include <linux/wait.h>
+#include <linux/jiffies.h>
 #include <linux/input.h>
 #include <linux/usb.h>
 #include <linux/usb/input.h>
@@ -248,8 +249,10 @@ static void piuio_close(struct input_dev *dev)
 	/* Stop polling, but wait for the last requests to complete */
 	usb_block_urb(piu->in);
 	usb_block_urb(piu->out);
-	wait_event(piu->shutdown_wait, atomic_read(&piu->in->use_count) == 0 &&
-			atomic_read(&piu->out->use_count) == 0);
+	wait_event_timeout(piu->shutdown_wait,
+			atomic_read(&piu->in->use_count) == 0 &&
+			atomic_read(&piu->out->use_count) == 0,
+			msecs_to_jiffies(5));
 	usb_unblock_urb(piu->in);
 	usb_unblock_urb(piu->out);
 
