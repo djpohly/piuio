@@ -119,7 +119,7 @@ static void piuio_in_completed(struct urb *urb)
 	int ret = urb->status;
 
 	if (ret) {
-		dev_warn(&piu->dev->dev, "in urb status %d received\n", ret);
+		dev_warn(&piu->usbdev->dev, "piuio callback(in): error %d\n", ret);
 		goto resubmit;
 	}
 
@@ -153,10 +153,8 @@ static void piuio_in_completed(struct urb *urb)
 
 resubmit:
 	ret = usb_submit_urb(urb, GFP_ATOMIC);
-	if (ret) {
-		dev_err(&piu->dev->dev,
-				"usb_submit_urb(in) failed, status %d", ret);
-	}
+	if (ret)
+		dev_err(&piu->usbdev->dev, "piuio resubmit(in): error %d\n", ret);
 
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
@@ -168,7 +166,7 @@ static void piuio_out_completed(struct urb *urb)
 	int ret = urb->status;
 
 	if (ret) {
-		dev_warn(&piu->dev->dev, "out urb status %d received\n", ret);
+		dev_warn(&piu->usbdev->dev, "piuio callback(out): error %d\n", ret);
 		goto resubmit;
 	}
 
@@ -190,10 +188,8 @@ static void piuio_out_completed(struct urb *urb)
 	
 resubmit:
 	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
-	if (ret) {
-		dev_err(&piu->dev->dev,
-				"usb_submit_urb(out) failed, status %d\n", ret);
-	}
+	if (ret)
+		dev_err(&piu->usbdev->dev, "piuio resubmit(out): error %d\n", ret);
 
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
@@ -211,15 +207,13 @@ static int piuio_open(struct input_dev *dev)
 	/* Kick off the polling */
 	ret = usb_submit_urb(piu->out, GFP_KERNEL);
 	if (ret) {
-		dev_err(&dev->dev, "usb_submit_urb(out) failed, status %d\n",
-				ret);
+		dev_err(&piu->usbdev->dev, "piuio submit(out): error %d\n", ret);
 		return -EIO;
 	}
 
 	ret = usb_submit_urb(piu->in, GFP_KERNEL);
 	if (ret) {
-		dev_err(&dev->dev, "usb_submit_urb(in) failed, status %d\n",
-				ret);
+		dev_err(&piu->usbdev->dev, "piuio submit(in): error %d\n", ret);
 		usb_kill_urb(piu->out);
 		return -EIO;
 	}
@@ -244,7 +238,7 @@ static void piuio_close(struct input_dev *dev)
 
 	if (!remaining) {
 		// Timed out
-		dev_warn(&dev->dev, "urb timeout when closing\n");
+		dev_warn(&piu->usbdev->dev, "piuio close: urb timeout\n");
 		usb_kill_urb(piu->in);
 		usb_kill_urb(piu->out);
 	}
@@ -299,8 +293,10 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 	/* If this function returns an error, piuio_destroy will be called */
 	piu->in = usb_alloc_urb(0, GFP_KERNEL);
 	piu->out = usb_alloc_urb(0, GFP_KERNEL);
-	if (!piu->in || !piu->out)
+	if (!piu->in || !piu->out) {
+		dev_err(&usbdev->dev, "piuio init: failed to allocate URBs\n");
 		return -ENOMEM;
+	}
 
 	init_waitqueue_head(&piu->shutdown_wait);
 
@@ -353,11 +349,14 @@ static int piuio_probe(struct usb_interface *intf,
 
 	/* Allocate PIUIO state and input device */
 	piu = kzalloc(sizeof(struct piuio), GFP_KERNEL);
-	if (!piu)
+	if (!piu) {
+		dev_err(&intf->dev, "piuio probe: failed to allocate state\n");
 		return ret;
+	}
 
 	dev = input_allocate_device();
 	if (!dev) {
+		dev_err(&intf->dev, "piuio probe: failed to allocate input dev\n");
 		kfree(piu);
 		return ret;
 	}
@@ -371,8 +370,10 @@ static int piuio_probe(struct usb_interface *intf,
 
 	/* Register input device */
 	ret = input_register_device(piu->dev);
-	if (ret)
+	if (ret) {
+		dev_err(&intf->dev, "piuio probe: failed to register input dev\n");
 		goto err;
+	}
 
 	/* Final USB setup */
 	usb_set_intfdata(intf, piu);
@@ -391,7 +392,7 @@ static void piuio_disconnect(struct usb_interface *intf)
 
 	usb_set_intfdata(intf, NULL);
 	if (!piu) {
-		dev_err(&intf->dev, "disconnecting non-existent PIUIO\n");
+		dev_err(&intf->dev, "piuio disconnect: uninitialized device?\n");
 		return;
 	}
 
