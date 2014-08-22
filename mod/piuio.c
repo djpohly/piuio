@@ -230,11 +230,20 @@ out_finished:
 static int piuio_open(struct input_dev *dev)
 {
 	struct piuio *piu = input_get_drvdata(dev);
+	int ret;
 
 	/* Kick off the polling */
-	if (usb_submit_urb(piu->out, GFP_KERNEL))
+	ret = usb_submit_urb(piu->out, GFP_KERNEL);
+	if (ret) {
+		dev_err(&dev->dev, "usb_submit_urb(lights) failed, status %d\n",
+				ret);
 		return -EIO;
-	if (usb_submit_urb(piu->in, GFP_KERNEL)) {
+	}
+
+	ret = usb_submit_urb(piu->in, GFP_KERNEL);
+	if (ret) {
+		dev_err(&dev->dev, "usb_submit_urb(new) failed, status %d\n",
+				ret);
 		usb_kill_urb(piu->out);
 		return -EIO;
 	}
