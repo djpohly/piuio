@@ -116,18 +116,11 @@ static void piuio_in_completed(struct urb *urb)
 	unsigned long b;
 	int i, s;
 	int cur_set;
+	int ret = urb->status;
 
-	switch (urb->status) {
-		case 0:			/* success */
-			break;
-		case -ECONNRESET:	/* unlink */
-		case -ENOENT:
-		case -ESHUTDOWN:
-			goto in_finished;
-		default:		/* error */
-			dev_warn(&piu->dev->dev, "in urb status %d received\n",
-					urb->status);
-			goto resubmit;
+	if (ret) {
+		dev_warn(&piu->dev->dev, "in urb status %d received\n", ret);
+		goto resubmit;
 	}
 
 	/* Get the index of the previous input set */
@@ -167,13 +160,12 @@ static void piuio_in_completed(struct urb *urb)
 	input_sync(piu->dev);
 
 resubmit:
-	i = usb_submit_urb(urb, GFP_ATOMIC);
-	if (i) {
+	ret = usb_submit_urb(urb, GFP_ATOMIC);
+	if (ret) {
 		dev_err(&piu->dev->dev,
-				"usb_submit_urb(in) failed, status %d", i);
+				"usb_submit_urb(in) failed, status %d", ret);
 	}
 
-in_finished:
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
 }
@@ -183,17 +175,9 @@ static void piuio_out_completed(struct urb *urb)
 	struct piuio *piu = urb->context;
 	int ret = urb->status;
 
-	switch (ret) {
-		case 0:			/* success */
-			break;
-		case -ECONNRESET:	/* unlink */
-		case -ENOENT:
-		case -ESHUTDOWN:
-			goto out_finished;
-		default:		/* error */
-			dev_warn(&piu->dev->dev, "out urb status %d received\n",
-					ret);
-			break;
+	if (ret) {
+		dev_warn(&piu->dev->dev, "out urb status %d received\n", ret);
+		goto resubmit;
 	}
 
 /* The code below assumes that PIUIO_MULTIPLEX is 4.  It could be made more
@@ -212,14 +196,13 @@ static void piuio_out_completed(struct urb *urb)
 	piu->outputs[2] &= ~3;
 	piu->outputs[2] |= piu->set;
 	
+resubmit:
 	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
 	if (ret) {
 		dev_err(&piu->dev->dev,
-				"usb_submit_urb(out) failed, status %d\n",
-				ret);
+				"usb_submit_urb(out) failed, status %d\n", ret);
 	}
 
-out_finished:
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
 }
