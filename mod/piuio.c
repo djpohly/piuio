@@ -45,10 +45,10 @@
 
 /**
  * struct piuio - state of each attached PIUIO
- * @dev:	Input device associated with this PIUIO
- * @phys:	Physical path of the device. @dev's phys field points to this
+ * @idev:	Input device associated with this PIUIO
+ * @phys:	Physical path of the device. @idev's phys field points to this
  *		buffer
- * @usbdev:	USB device associated with this PIUIO
+ * @udev:	USB device associated with this PIUIO
  * @in:		URB for requesting the current state of one set of inputs
  * @out:	URB for sending data to outputs and multiplexer
  * @cr_in:	Setup packet for @in URB
@@ -63,10 +63,10 @@
  * @set:	Current set of inputs to read, (0 .. PIUIO_MULTIPLEX - 1)
  */
 struct piuio {
-	struct input_dev *dev;
+	struct input_dev *idev;
 	char phys[64];
 
-	struct usb_device *usbdev;
+	struct usb_device *udev;
 	struct urb *in, *out;
 	struct usb_ctrlrequest cr_in, cr_out;
 	wait_queue_head_t shutdown_wait;
@@ -94,15 +94,15 @@ static int keycode(unsigned int pin)
 	return BTN_TRIGGER_HAPPY + pin;
 }
 
-static void report_key(struct input_dev *dev, unsigned int pin, int press)
+static void report_key(struct input_dev *idev, unsigned int pin, int press)
 {
 	int code = keycode(pin);
 
 	if (code == KEY_RESERVED)
 		return;
 
-	input_event(dev, EV_MSC, MSC_SCAN, pin + 1);
-	input_report_key(dev, keycode(pin), press);
+	input_event(idev, EV_MSC, MSC_SCAN, pin + 1);
+	input_report_key(idev, keycode(pin), press);
 }
 
 
@@ -119,7 +119,7 @@ static void piuio_in_completed(struct urb *urb)
 	int ret = urb->status;
 
 	if (ret) {
-		dev_warn(&piu->usbdev->dev, "piuio callback(in): error %d\n", ret);
+		dev_warn(&piu->udev->dev, "piuio callback(in): error %d\n", ret);
 		goto resubmit;
 	}
 
@@ -146,15 +146,15 @@ static void piuio_in_completed(struct urb *urb)
 	/* For each input which has changed state, report whether it was pressed
 	 * or released based on the current value. */
 	for_each_set_bit(b, changed, PIUIO_INPUTS)
-		report_key(piu->dev, b, !test_bit(b, piu->inputs));
+		report_key(piu->idev, b, !test_bit(b, piu->inputs));
 
 	/* Done reporting input events */
-	input_sync(piu->dev);
+	input_sync(piu->idev);
 
 resubmit:
 	ret = usb_submit_urb(urb, GFP_ATOMIC);
 	if (ret)
-		dev_err(&piu->usbdev->dev, "piuio resubmit(in): error %d\n", ret);
+		dev_err(&piu->udev->dev, "piuio resubmit(in): error %d\n", ret);
 
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
@@ -166,7 +166,7 @@ static void piuio_out_completed(struct urb *urb)
 	int ret = urb->status;
 
 	if (ret) {
-		dev_warn(&piu->usbdev->dev, "piuio callback(out): error %d\n", ret);
+		dev_warn(&piu->udev->dev, "piuio callback(out): error %d\n", ret);
 		goto resubmit;
 	}
 
@@ -189,7 +189,7 @@ static void piuio_out_completed(struct urb *urb)
 resubmit:
 	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
 	if (ret)
-		dev_err(&piu->usbdev->dev, "piuio resubmit(out): error %d\n", ret);
+		dev_err(&piu->udev->dev, "piuio resubmit(out): error %d\n", ret);
 
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
@@ -199,21 +199,21 @@ resubmit:
 /*
  * Input device events
  */
-static int piuio_open(struct input_dev *dev)
+static int piuio_open(struct input_dev *idev)
 {
-	struct piuio *piu = input_get_drvdata(dev);
+	struct piuio *piu = input_get_drvdata(idev);
 	int ret;
 
 	/* Kick off the polling */
 	ret = usb_submit_urb(piu->out, GFP_KERNEL);
 	if (ret) {
-		dev_err(&piu->usbdev->dev, "piuio submit(out): error %d\n", ret);
+		dev_err(&piu->udev->dev, "piuio submit(out): error %d\n", ret);
 		return -EIO;
 	}
 
 	ret = usb_submit_urb(piu->in, GFP_KERNEL);
 	if (ret) {
-		dev_err(&piu->usbdev->dev, "piuio submit(in): error %d\n", ret);
+		dev_err(&piu->udev->dev, "piuio submit(in): error %d\n", ret);
 		usb_kill_urb(piu->out);
 		return -EIO;
 	}
@@ -221,9 +221,9 @@ static int piuio_open(struct input_dev *dev)
 	return 0;
 }
 
-static void piuio_close(struct input_dev *dev)
+static void piuio_close(struct input_dev *idev)
 {
-	struct piuio *piu = input_get_drvdata(dev);
+	struct piuio *piu = input_get_drvdata(idev);
 	long remaining;
 
 	/* Stop polling, but wait for the last requests to complete */
@@ -238,7 +238,7 @@ static void piuio_close(struct input_dev *dev)
 
 	if (!remaining) {
 		// Timed out
-		dev_warn(&piu->usbdev->dev, "piuio close: urb timeout\n");
+		dev_warn(&piu->udev->dev, "piuio close: urb timeout\n");
 		usb_kill_urb(piu->in);
 		usb_kill_urb(piu->out);
 	}
@@ -253,56 +253,56 @@ static void piuio_close(struct input_dev *dev)
  */
 static void piuio_input_init(struct piuio *piu, struct device *parent)
 {
-	struct input_dev *dev = piu->dev;
+	struct input_dev *idev = piu->idev;
 	int i;
 
 	/* Fill in basic fields */
-	dev->name = "PIUIO input";
-	dev->phys = piu->phys;
-	usb_to_input_id(piu->usbdev, &dev->id);
-	dev->dev.parent = parent;
+	idev->name = "PIUIO input";
+	idev->phys = piu->phys;
+	usb_to_input_id(piu->udev, &idev->id);
+	idev->dev.parent = parent;
 
 	/* HACK: Buttons are sufficient to trigger a /dev/input/js* device, but
 	 * for systemd (and consequently udev and Xorg) to consider us a
 	 * joystick, we have to have a set of XY absolute axes. */
-	set_bit(EV_KEY, dev->evbit);
-	set_bit(EV_ABS, dev->evbit);
+	set_bit(EV_KEY, idev->evbit);
+	set_bit(EV_ABS, idev->evbit);
 
 	/* Configure buttons */
 	for (i = 0; i < PIUIO_INPUTS; i++)
-		set_bit(keycode(i), dev->keybit);
-	clear_bit(0, dev->keybit);
+		set_bit(keycode(i), idev->keybit);
+	clear_bit(0, idev->keybit);
 
 	/* Configure fake axes */
-	set_bit(ABS_X, dev->absbit);
-	set_bit(ABS_Y, dev->absbit);
-	input_set_abs_params(dev, ABS_X, 0, 0, 0, 0);
-	input_set_abs_params(dev, ABS_Y, 0, 0, 0, 0);
+	set_bit(ABS_X, idev->absbit);
+	set_bit(ABS_Y, idev->absbit);
+	input_set_abs_params(idev, ABS_X, 0, 0, 0, 0);
+	input_set_abs_params(idev, ABS_Y, 0, 0, 0, 0);
 
 	/* Set device callbacks */
-	dev->open = piuio_open;
-	dev->close = piuio_close;
+	idev->open = piuio_open;
+	idev->close = piuio_close;
 
 	/* Link input device back to PIUIO */
-	input_set_drvdata(dev, piu);
+	input_set_drvdata(idev, piu);
 }
 
-static int piuio_init(struct piuio *piu, struct input_dev *dev,
-		struct usb_device *usbdev)
+static int piuio_init(struct piuio *piu, struct input_dev *idev,
+		struct usb_device *udev)
 {
 	/* If this function returns an error, piuio_destroy will be called */
 	piu->in = usb_alloc_urb(0, GFP_KERNEL);
 	piu->out = usb_alloc_urb(0, GFP_KERNEL);
 	if (!piu->in || !piu->out) {
-		dev_err(&usbdev->dev, "piuio init: failed to allocate URBs\n");
+		dev_err(&udev->dev, "piuio init: failed to allocate URBs\n");
 		return -ENOMEM;
 	}
 
 	init_waitqueue_head(&piu->shutdown_wait);
 
-	piu->dev = dev;
-	piu->usbdev = usbdev;
-	usb_make_path(usbdev, piu->phys, sizeof(piu->phys));
+	piu->idev = idev;
+	piu->udev = udev;
+	usb_make_path(udev, piu->phys, sizeof(piu->phys));
 	strlcat(piu->phys, "/input0", sizeof(piu->phys));
 
 	/* Prepare URB for multiplexer and outputs */
@@ -311,7 +311,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 	piu->cr_out.wValue = cpu_to_le16(PIUIO_MSG_VAL);
 	piu->cr_out.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
 	piu->cr_out.wLength = cpu_to_le16(PIUIO_MSG_SZ);
-	usb_fill_control_urb(piu->out, usbdev, usb_sndctrlpipe(usbdev, 0),
+	usb_fill_control_urb(piu->out, udev, usb_sndctrlpipe(udev, 0),
 			(void *) &piu->cr_out, piu->outputs, PIUIO_MSG_SZ,
 			piuio_out_completed, piu);
 
@@ -321,7 +321,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 	piu->cr_in.wValue = cpu_to_le16(PIUIO_MSG_VAL);
 	piu->cr_in.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
 	piu->cr_in.wLength = cpu_to_le16(PIUIO_MSG_SZ);
-	usb_fill_control_urb(piu->in, usbdev, usb_rcvctrlpipe(usbdev, 0),
+	usb_fill_control_urb(piu->in, udev, usb_rcvctrlpipe(udev, 0),
 			(void *) &piu->cr_in, piu->inputs, PIUIO_MSG_SZ,
 			piuio_in_completed, piu);
 
@@ -342,9 +342,9 @@ static void piuio_destroy(struct piuio *piu)
 static int piuio_probe(struct usb_interface *intf,
 			 const struct usb_device_id *id)
 {
-	struct usb_device *usbdev = interface_to_usbdev(intf);
 	struct piuio *piu;
-	struct input_dev *dev;
+	struct usb_device *udev = interface_to_usbdev(intf);
+	struct input_dev *idev;
 	int ret = -ENOMEM;
 
 	/* Allocate PIUIO state and input device */
@@ -354,22 +354,22 @@ static int piuio_probe(struct usb_interface *intf,
 		return ret;
 	}
 
-	dev = input_allocate_device();
-	if (!dev) {
+	idev = input_allocate_device();
+	if (!idev) {
 		dev_err(&intf->dev, "piuio probe: failed to allocate input dev\n");
 		kfree(piu);
 		return ret;
 	}
 
 	/* Initialize PIUIO state and input device */
-	ret = piuio_init(piu, dev, usbdev);
+	ret = piuio_init(piu, idev, udev);
 	if (ret)
 		goto err;
 
 	piuio_input_init(piu, &intf->dev);
 
 	/* Register input device */
-	ret = input_register_device(piu->dev);
+	ret = input_register_device(piu->idev);
 	if (ret) {
 		dev_err(&intf->dev, "piuio probe: failed to register input dev\n");
 		goto err;
@@ -381,7 +381,7 @@ static int piuio_probe(struct usb_interface *intf,
 
 err:
 	piuio_destroy(piu);
-	input_free_device(dev);
+	input_free_device(idev);
 	kfree(piu);
 	return ret;
 }
@@ -398,7 +398,7 @@ static void piuio_disconnect(struct usb_interface *intf)
 
 	usb_kill_urb(piu->in);
 	usb_kill_urb(piu->out);
-	input_unregister_device(piu->dev);
+	input_unregister_device(piu->idev);
 	piuio_destroy(piu);
 	kfree(piu);
 }
