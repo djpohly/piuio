@@ -245,16 +245,24 @@ static int piuio_open(struct input_dev *dev)
 static void piuio_close(struct input_dev *dev)
 {
 	struct piuio *piu = input_get_drvdata(dev);
+	long remaining;
 
 	/* Stop polling, but wait for the last requests to complete */
 	usb_block_urb(piu->in);
 	usb_block_urb(piu->out);
-	wait_event_timeout(piu->shutdown_wait,
+	remaining = wait_event_timeout(piu->shutdown_wait,
 			atomic_read(&piu->in->use_count) == 0 &&
 			atomic_read(&piu->out->use_count) == 0,
 			msecs_to_jiffies(5));
 	usb_unblock_urb(piu->in);
 	usb_unblock_urb(piu->out);
+
+	if (!remaining) {
+		// Timed out
+		dev_warn(&dev->dev, "urb timeout when closing\n");
+		usb_kill_urb(piu->in);
+		usb_kill_urb(piu->out);
+	}
 
 	/* XXX Kill the lights! */
 	/* XXX Re-initialize parts of piuio struct */
