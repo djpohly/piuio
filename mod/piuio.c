@@ -143,18 +143,10 @@ static void piuio_in_completed(struct urb *urb)
 			changed[i] &= piu->old_inputs[s][i];
 	}
 
-	/* Find and report any inputs which have changed state */
-	for (i = 0; i < PIUIO_MSG_LONGS; i++) {
-		/* As long as some bit is still set... */
-		while (changed[i]) {
-			/* find the index of the first set bit and clear it */
-			b = __ffs(changed[i]);
-			clear_bit(b, &changed[i]);
-			/* and report the corresponding press or release. */
-			report_key(piu->dev, i * BITS_PER_LONG + b,
-					!test_bit(b, &piu->inputs[i]));
-		}
-	}
+	/* For each input which has changed state, report whether it was pressed
+	 * or released based on the current value. */
+	for_each_set_bit(b, changed, PIUIO_INPUTS)
+		report_key(piu->dev, b, !test_bit(b, piu->inputs));
 
 	/* Done reporting input events */
 	input_sync(piu->dev);
