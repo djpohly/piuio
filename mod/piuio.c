@@ -343,10 +343,10 @@ static void piuio_destroy(struct piuio *piu)
 /*
  * USB connect and disconnect events
  */
-static int piuio_probe(struct usb_interface *iface,
+static int piuio_probe(struct usb_interface *intf,
 			 const struct usb_device_id *id)
 {
-	struct usb_device *usbdev = interface_to_usbdev(iface);
+	struct usb_device *usbdev = interface_to_usbdev(intf);
 	struct piuio *piu;
 	struct input_dev *dev;
 	int ret = -ENOMEM;
@@ -367,7 +367,7 @@ static int piuio_probe(struct usb_interface *iface,
 	if (ret)
 		goto err;
 
-	piuio_input_init(piu, &iface->dev);
+	piuio_input_init(piu, &intf->dev);
 
 	/* Register input device */
 	ret = input_register_device(piu->dev);
@@ -375,7 +375,7 @@ static int piuio_probe(struct usb_interface *iface,
 		goto err;
 
 	/* Final USB setup */
-	usb_set_intfdata(iface, piu);
+	usb_set_intfdata(intf, piu);
 	return 0;
 
 err:
