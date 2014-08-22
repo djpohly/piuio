@@ -45,21 +45,22 @@
 
 /**
  * struct piuio - state of each attached PIUIO
- * @dev:	input device associated with this PIUIO
+ * @dev:	Input device associated with this PIUIO
  * @phys:	Physical path of the device. @dev's phys field points to this
  *		buffer
- * @usbdev:	usb device associated with this PIUIO
+ * @usbdev:	USB device associated with this PIUIO
  * @in:		URB for requesting the current state of one set of inputs
  * @out:	URB for sending data to outputs and multiplexer
- * @cr_in:	Setup packet for @new URB
+ * @cr_in:	Setup packet for @in URB
  * @cr_out:	Setup packet for @out URB
- * @old:	previous state of input pins from the @in URB for each of the
+ * @old_inputs:	Previous state of input pins from the @in URB for each of the
  *		input sets.  These are used to determine when a press or release
  *		has happened for a group of correlated inputs.
- * @new:	Buffer for the @in URB
- * @lights:	Buffer for the @out URB
- * @new_lights:	Staging for the @lights buffer
- * @set:	current set of inputs to read, (0 .. PIUIO_MULTIPLEX - 1)
+ * @inputs:	Buffer for the @in URB
+ * @outputs:	Buffer for the @out URB
+ * @new_outputs:
+ * 		Staging for the @outputs buffer
+ * @set:	Current set of inputs to read, (0 .. PIUIO_MULTIPLEX - 1)
  */
 struct piuio {
 	struct input_dev *dev;
@@ -70,10 +71,10 @@ struct piuio {
 	struct usb_ctrlrequest cr_in, cr_out;
 	wait_queue_head_t shutdown_wait;
 
-	unsigned long old[PIUIO_MULTIPLEX][PIUIO_MSG_LONGS];
-	unsigned long new[PIUIO_MSG_LONGS];
-	unsigned char lights[PIUIO_MSG_SZ];
-	unsigned char new_lights[PIUIO_MSG_SZ];
+	unsigned long old_inputs[PIUIO_MULTIPLEX][PIUIO_MSG_LONGS];
+	unsigned long inputs[PIUIO_MSG_LONGS];
+	unsigned char outputs[PIUIO_MSG_SZ];
+	unsigned char new_outputs[PIUIO_MSG_SZ];
 
 	int set;
 };
@@ -135,8 +136,8 @@ static void piuio_in_completed(struct urb *urb)
 	/* Note what has changed in this input set, then store the inputs for
 	 * next time */
 	for (i = 0; i < PIUIO_MSG_LONGS; i++) {
-		changed[i] = piu->new[i] ^ piu->old[cur_set][i];
-		piu->old[cur_set][i] = piu->new[i];
+		changed[i] = piu->inputs[i] ^ piu->old_inputs[cur_set][i];
+		piu->old_inputs[cur_set][i] = piu->inputs[i];
 	}
 
 	/* Changes only count when none of the corresponding inputs in other
@@ -146,7 +147,7 @@ static void piuio_in_completed(struct urb *urb)
 		if (s == cur_set)
 			continue;
 		for (i = 0; i < PIUIO_MSG_LONGS; i++)
-			changed[i] &= piu->old[s][i];
+			changed[i] &= piu->old_inputs[s][i];
 	}
 
 	/* Find and report any inputs which have changed state */
@@ -158,7 +159,7 @@ static void piuio_in_completed(struct urb *urb)
 			clear_bit(b, &changed[i]);
 			/* and report the corresponding press or release. */
 			report_key(piu->dev, i * BITS_PER_LONG + b,
-					!test_bit(b, &piu->new[i]));
+					!test_bit(b, &piu->inputs[i]));
 		}
 	}
 
@@ -169,7 +170,7 @@ resubmit:
 	i = usb_submit_urb(urb, GFP_ATOMIC);
 	if (i) {
 		dev_err(&piu->dev->dev,
-				"usb_submit_urb(new) failed, status %d", i);
+				"usb_submit_urb(in) failed, status %d", i);
 	}
 
 in_finished:
@@ -204,17 +205,17 @@ static void piuio_out_completed(struct urb *urb)
 	/* Switch to the next input set in rotation */
 	piu->set = (piu->set + 1) % PIUIO_MULTIPLEX;
 
-	/* Copy in the new lights and set multiplexer bits */
-	memcpy(piu->lights, piu->new_lights, PIUIO_MSG_SZ);
-	piu->lights[0] &= ~3;
-	piu->lights[0] |= piu->set;
-	piu->lights[2] &= ~3;
-	piu->lights[2] |= piu->set;
+	/* Copy in the new outputs and set multiplexer bits */
+	memcpy(piu->outputs, piu->new_outputs, PIUIO_MSG_SZ);
+	piu->outputs[0] &= ~3;
+	piu->outputs[0] |= piu->set;
+	piu->outputs[2] &= ~3;
+	piu->outputs[2] |= piu->set;
 	
 	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
 	if (ret) {
 		dev_err(&piu->dev->dev,
-				"usb_submit_urb(lights) failed, status %d\n",
+				"usb_submit_urb(out) failed, status %d\n",
 				ret);
 	}
 
@@ -235,14 +236,14 @@ static int piuio_open(struct input_dev *dev)
 	/* Kick off the polling */
 	ret = usb_submit_urb(piu->out, GFP_KERNEL);
 	if (ret) {
-		dev_err(&dev->dev, "usb_submit_urb(lights) failed, status %d\n",
+		dev_err(&dev->dev, "usb_submit_urb(out) failed, status %d\n",
 				ret);
 		return -EIO;
 	}
 
 	ret = usb_submit_urb(piu->in, GFP_KERNEL);
 	if (ret) {
-		dev_err(&dev->dev, "usb_submit_urb(new) failed, status %d\n",
+		dev_err(&dev->dev, "usb_submit_urb(in) failed, status %d\n",
 				ret);
 		usb_kill_urb(piu->out);
 		return -EIO;
@@ -273,7 +274,7 @@ static void piuio_close(struct input_dev *dev)
 		usb_kill_urb(piu->out);
 	}
 
-	/* XXX Kill the lights! */
+	/* XXX Reset the outputs! */
 	/* XXX Re-initialize parts of piuio struct */
 }
 
@@ -333,14 +334,14 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 	usb_make_path(usbdev, piu->phys, sizeof(piu->phys));
 	strlcat(piu->phys, "/input0", sizeof(piu->phys));
 
-	/* Prepare URB for multiplexer and lights */
+	/* Prepare URB for multiplexer and outputs */
 	piu->cr_out.bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
 	piu->cr_out.bRequest = cpu_to_le16(PIUIO_MSG_REQ);
 	piu->cr_out.wValue = cpu_to_le16(PIUIO_MSG_VAL);
 	piu->cr_out.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
 	piu->cr_out.wLength = cpu_to_le16(PIUIO_MSG_SZ);
 	usb_fill_control_urb(piu->out, usbdev, usb_sndctrlpipe(usbdev, 0),
-			(void *) &piu->cr_out, piu->lights, PIUIO_MSG_SZ,
+			(void *) &piu->cr_out, piu->outputs, PIUIO_MSG_SZ,
 			piuio_out_completed, piu);
 
 	/* Prepare URB for inputs */
@@ -350,7 +351,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *dev,
 	piu->cr_in.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
 	piu->cr_in.wLength = cpu_to_le16(PIUIO_MSG_SZ);
 	usb_fill_control_urb(piu->in, usbdev, usb_rcvctrlpipe(usbdev, 0),
-			(void *) &piu->cr_in, piu->new, PIUIO_MSG_SZ,
+			(void *) &piu->cr_in, piu->inputs, PIUIO_MSG_SZ,
 			piuio_in_completed, piu);
 
 	return 0;
