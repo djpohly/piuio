@@ -153,7 +153,9 @@ static void piuio_in_completed(struct urb *urb)
 
 resubmit:
 	ret = usb_submit_urb(urb, GFP_ATOMIC);
-	if (ret)
+	if (ret == -EPERM)
+		dev_info(&piu->udev->dev, "piuio resubmit(in): shutdown\n");
+	else if (ret)
 		dev_err(&piu->udev->dev, "piuio resubmit(in): error %d\n", ret);
 
 	/* Let any waiting threads know we're done here */
@@ -188,7 +190,9 @@ static void piuio_out_completed(struct urb *urb)
 	
 resubmit:
 	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
-	if (ret)
+	if (ret == -EPERM)
+		dev_info(&piu->udev->dev, "piuio resubmit(out): shutdown\n");
+	else if (ret)
 		dev_err(&piu->udev->dev, "piuio resubmit(out): error %d\n", ret);
 
 	/* Let any waiting threads know we're done here */
