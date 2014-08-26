@@ -15,6 +15,7 @@
 #include <linux/slab.h>
 #include <linux/errno.h>
 #include <linux/bitops.h>
+#include <linux/leds.h>
 #include <linux/wait.h>
 #include <linux/jiffies.h>
 #include <linux/input.h>
@@ -36,8 +37,9 @@
 #define PIUIO_MSG_SZ 8
 #define PIUIO_MSG_LONGS (PIUIO_MSG_SZ / sizeof(unsigned long))
 
-/* Number of usable inputs per set */
+/* Number of usable inputs and outputs */
 #define PIUIO_INPUTS 48
+#define PIUIO_OUTPUTS 48
 
 /* Number of sets of inputs multiplexed together */
 #define PIUIO_MULTIPLEX 4
@@ -75,6 +77,8 @@ struct piuio {
 	unsigned long inputs[PIUIO_MSG_LONGS];
 	unsigned char outputs[PIUIO_MSG_SZ];
 	unsigned char new_outputs[PIUIO_MSG_SZ];
+
+	struct led_classdev led[PIUIO_OUTPUTS];
 
 	int set;
 };
