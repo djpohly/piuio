@@ -332,10 +332,11 @@ static void piuio_led_set(struct led_classdev *dev, enum led_brightness b)
 		return;
 	}
 
+	/* Meh, forget atomicity, these aren't super-important */
 	if (b)
-		set_bit(n, (unsigned long *) piu->new_outputs);
+		__set_bit(n, (unsigned long *) piu->new_outputs);
 	else
-		clear_bit(n, (unsigned long *) piu->new_outputs);
+		__clear_bit(n, (unsigned long *) piu->new_outputs);
 }
 
 
