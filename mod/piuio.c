@@ -46,6 +46,16 @@
 
 
 /**
+ * struct piuio_led - auxiliary struct for led devices
+ * @piu:	Pointer back to the enclosing structure
+ * @dev:	Actual led device
+ */
+struct piuio_led {
+	struct piuio *piu;
+	struct led_classdev dev;
+};
+
+/**
  * struct piuio - state of each attached PIUIO
  * @idev:	Input device associated with this PIUIO
  * @phys:	Physical path of the device. @idev's phys field points to this
@@ -78,9 +88,60 @@ struct piuio {
 	unsigned char outputs[PIUIO_MSG_SZ];
 	unsigned char new_outputs[PIUIO_MSG_SZ];
 
-	struct led_classdev led[PIUIO_OUTPUTS];
+	struct piuio_led led[PIUIO_OUTPUTS];
 
 	int set;
+};
+
+static const char *led_names[] = {
+	"piuio::output0",
+	"piuio::output1",
+	"piuio::output2",
+	"piuio::output3",
+	"piuio::output4",
+	"piuio::output5",
+	"piuio::output6",
+	"piuio::output7",
+	"piuio::output8",
+	"piuio::output9",
+	"piuio::output10",
+	"piuio::output11",
+	"piuio::output12",
+	"piuio::output13",
+	"piuio::output14",
+	"piuio::output15",
+	"piuio::output16",
+	"piuio::output17",
+	"piuio::output18",
+	"piuio::output19",
+	"piuio::output20",
+	"piuio::output21",
+	"piuio::output22",
+	"piuio::output23",
+	"piuio::output24",
+	"piuio::output25",
+	"piuio::output26",
+	"piuio::output27",
+	"piuio::output28",
+	"piuio::output29",
+	"piuio::output30",
+	"piuio::output31",
+	"piuio::output32",
+	"piuio::output33",
+	"piuio::output34",
+	"piuio::output35",
+	"piuio::output36",
+	"piuio::output37",
+	"piuio::output38",
+	"piuio::output39",
+	"piuio::output40",
+	"piuio::output41",
+	"piuio::output42",
+	"piuio::output43",
+	"piuio::output44",
+	"piuio::output45",
+	"piuio::output46",
+	"piuio::output47",
 };
 
 
@@ -257,6 +318,14 @@ static void piuio_close(struct input_dev *idev)
 
 
 /*
+ * led device events
+ */
+static void piuio_led_set(struct led_classdev *led, enum led_brightness b)
+{
+}
+
+
+/*
  * Structure initialization and destruction
  */
 static void piuio_input_init(struct piuio *piu, struct device *parent)
@@ -293,6 +362,38 @@ static void piuio_input_init(struct piuio *piu, struct device *parent)
 
 	/* Link input device back to PIUIO */
 	input_set_drvdata(idev, piu);
+}
+
+static int piuio_leds_init(struct piuio *piu)
+{
+	int i;
+	int ret;
+
+	for (i = 0; i < PIUIO_OUTPUTS; i++) {
+		/* Initialize led device and point back to piuio struct */
+		piu->led[i].dev.name = led_names[i];
+		piu->led[i].dev.brightness_set = piuio_led_set;
+		piu->led[i].piu = piu;
+
+		/* Register led device */
+		ret = led_classdev_register(&piu->udev->dev, &piu->led[i].dev);
+		if (ret)
+			goto out_unregister;
+	}
+
+	return 0;
+
+out_unregister:
+	for (--i; i >= 0; i--)
+		led_classdev_unregister(&piu->led[i].dev);
+	return ret;
+}
+
+static void piuio_leds_destroy(struct piuio *piu)
+{
+	int i;
+	for (i = 0; i < PIUIO_OUTPUTS; i++)
+		led_classdev_unregister(&piu->led[i].dev);
 }
 
 static int piuio_init(struct piuio *piu, struct input_dev *idev,
@@ -376,10 +477,16 @@ static int piuio_probe(struct usb_interface *intf,
 
 	piuio_input_init(piu, &intf->dev);
 
+	/* Initialize and register led devices */
+	ret = piuio_leds_init(piu);
+	if (ret)
+		goto err;
+
 	/* Register input device */
 	ret = input_register_device(piu->idev);
 	if (ret) {
 		dev_err(&intf->dev, "piuio probe: failed to register input dev\n");
+		piuio_leds_destroy(piu);
 		goto err;
 	}
 
