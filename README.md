@@ -34,9 +34,6 @@ to the `brightness` file in a given led directory:
 
     echo 1 > /sys/class/leds/piuio::output3/brightness
 
-Note that under the default configuration, led devices are only accessible by
-root.  This can be changed with udev rules.
-
 
 Implementation and accuracy
 ---------------------------
