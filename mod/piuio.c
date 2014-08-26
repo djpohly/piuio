@@ -527,6 +527,7 @@ static void piuio_disconnect(struct usb_interface *intf)
 
 	usb_kill_urb(piu->in);
 	usb_kill_urb(piu->out);
+	piuio_leds_destroy(piu);
 	input_unregister_device(piu->idev);
 	piuio_destroy(piu);
 	kfree(piu);
