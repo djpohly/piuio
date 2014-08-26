@@ -318,10 +318,24 @@ static void piuio_close(struct input_dev *idev)
 
 
 /*
- * led device events
+ * Led device event
  */
-static void piuio_led_set(struct led_classdev *led, enum led_brightness b)
+static void piuio_led_set(struct led_classdev *dev, enum led_brightness b)
 {
+	struct piuio_led *led = container_of(dev, struct piuio_led, dev);
+	struct piuio *piu = led->piu;
+	int n;
+
+	n = led - piu->led;
+	if (n > PIUIO_OUTPUTS) {
+		dev_err(&piu->udev->dev, "piuio led: bad number %d\n", n);
+		return;
+	}
+
+	if (b)
+		set_bit(n, (unsigned long *) piu->new_outputs);
+	else
+		clear_bit(n, (unsigned long *) piu->new_outputs);
 }
 
 
