@@ -13,6 +13,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/stat.h>
+#include <linux/sysfs.h>
 #include <linux/errno.h>
 #include <linux/bitops.h>
 #include <linux/leds.h>
@@ -400,7 +402,7 @@ static int piuio_leds_init(struct piuio *piu)
 		for (ag = piu->led[i].dev.dev->class->dev_groups; *ag; ag++) {
 			for (attr = (*ag)->attrs; *attr; attr++) {
 				ret = sysfs_chmod_file(&piu->led[i].dev.dev->kobj,
-						*attr, 0666);
+						*attr, S_IRUGO | S_IWUGO);
 				if (ret) {
 					led_classdev_unregister(&piu->led[i].dev);
 					goto out_unregister;
