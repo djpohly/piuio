@@ -312,8 +312,7 @@ static void piuio_close(struct input_dev *idev)
 		usb_kill_urb(piu->out);
 	}
 
-	/* XXX Reset the outputs! */
-	/* XXX Re-initialize parts of piuio struct */
+	/* XXX Reset the outputs? */
 }
 
 
