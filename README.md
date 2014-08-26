@@ -23,12 +23,19 @@ which to install (e.g. for packaging), you can specify a `DESTDIR`:
     make DESTDIR="$pkgdir" install
 
 
-Tools
------
+Tools for testing
+-----------------
 
 Since this module uses the input subsystem, you can use standard tools such as
-[evemu](http://cgit.freedesktop.org/evemu/) to test it.  Outputs are currently
-not implemented in the driver.
+[evemu](http://cgit.freedesktop.org/evemu/) to test it.  Outputs are
+implemented using the leds subsystem and are consequently located in the
+`/sys/class/leds` directory.  You can test these by echoing zero/nonzero values
+to the `brightness` file in a given led directory:
+
+    echo 1 > /sys/class/leds/piuio::output3/brightness
+
+Note that under the default configuration, led devices are only accessible by
+root.  This can be changed with udev rules.
 
 
 Implementation and accuracy
