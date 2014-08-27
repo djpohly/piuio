@@ -14,9 +14,9 @@ export INSTALL_MOD_PATH
 
 all: modules ;
 
-install: all modules_install ;
+install: modules_install ;
 
 %:
-	make -C $(KDIR) M=$(shell pwd) $@
+	$(MAKE) -C $(KDIR) M=$(shell pwd) $@
 
 endif
