@@ -24,6 +24,8 @@
 #include <linux/usb.h>
 #include <linux/usb/input.h>
 
+#include "legacy.h"
+
 
 /*
  * Device and protocol definitions
