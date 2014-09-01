@@ -4,12 +4,14 @@
 #include <linux/version.h>
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)
-#define BTN_TRIGGER_HAPPY BTN_GAMEPAD
-
 #define for_each_set_bit(bit, addr, size) \
 	for ((bit) = find_first_bit((addr), (size)); \
 	     (bit) < (size); \
 	     (bit) = find_next_bit((addr), (size), (bit) + 1))
+
+#undef PIUIO_INPUTS
+#define PIUIO_INPUTS 32
+#define BTN_TRIGGER_HAPPY BTN_GAMEPAD
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)

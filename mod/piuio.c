@@ -24,8 +24,6 @@
 #include <linux/usb.h>
 #include <linux/usb/input.h>
 
-#include "legacy.h"
-
 
 /*
  * Device and protocol definitions
@@ -47,6 +45,8 @@
 
 /* Number of sets of inputs multiplexed together */
 #define PIUIO_MULTIPLEX 4
+
+#include "legacy.h"
 
 
 /**
