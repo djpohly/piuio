@@ -17,4 +17,13 @@ static void __exit __driver##_exit(void) \
 module_exit(__driver##_exit);
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0)
+#define class_for_each_attr(__attr, __pattr, __agrp, __dattr, __cls) \
+	for ((__dattr) = (__cls)->dev_attrs; ((__attr) = &(__dattr)->attr) && (__attr)->name; (__dattr)++)
+#else
+#define class_for_each_attr(__attr, __pattr, __agrp, __dattr, __cls) \
+	for ((__agrp) = (__cls)->dev_groups; *(__agrp); (__agrp)++) \
+		for ((__pattr) = (*(__agrp))->attrs; ((__attr) = *(__pattr)); (__pattr)++)
+#endif
+
 #endif
