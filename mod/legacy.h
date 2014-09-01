@@ -3,6 +3,15 @@
 
 #include <linux/version.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,34)
+#define BTN_TRIGGER_HAPPY BTN_GAMEPAD
+
+#define for_each_set_bit(bit, addr, size) \
+	for ((bit) = find_first_bit((addr), (size)); \
+	     (bit) < (size); \
+	     (bit) = find_next_bit((addr), (size), (bit) + 1))
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,3,0)
 #define module_usb_driver(__driver) \
 static int __init __driver##_init(void) \
