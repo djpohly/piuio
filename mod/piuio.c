@@ -30,6 +30,8 @@
  */
 #define USB_VENDOR_ID_ANCHOR 0x0547
 #define USB_PRODUCT_ID_PYTHON2 0x1002
+#define USB_VENDOR_ID_BTNBOARD 0x0d2f
+#define USB_PRODUCT_ID_BTNBOARD 0x1010
 
 /* USB message used to communicate with the device */
 #define PIUIO_MSG_REQ 0xae
