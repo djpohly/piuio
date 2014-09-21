@@ -516,6 +516,12 @@ static int piuio_probe(struct usb_interface *intf,
 	if (ret)
 		goto err;
 
+	if (id->idVendor == USB_VENDOR_ID_BTNBOARD &&
+			id->idProduct == USB_PRODUCT_ID_BTNBOARD) {
+		/* Disable multiplexing */
+		piu->set = -1;
+	}
+
 	piuio_input_init(piu, &intf->dev);
 
 	/* Initialize and register led devices */
@@ -564,9 +570,11 @@ static void piuio_disconnect(struct usb_interface *intf)
 /*
  * USB driver and module definitions
  */
-static struct usb_device_id piuio_id_table [] = {
+static struct usb_device_id piuio_id_table[] = {
 	/* Python WDM2 Encoder used for PIUIO boards */
 	{ USB_DEVICE(USB_VENDOR_ID_ANCHOR, USB_PRODUCT_ID_PYTHON2) },
+	/* Special USB ID for button board devices */
+	{ USB_DEVICE(USB_VENDOR_ID_BTNBOARD, USB_PRODUCT_ID_BTNBOARD) },
 	{},
 };
 
