@@ -76,7 +76,8 @@ struct piuio_led {
  * @outputs:	Buffer for the @out URB
  * @new_outputs:
  * 		Staging for the @outputs buffer
- * @set:	Current set of inputs to read, (0 .. PIUIO_MULTIPLEX - 1)
+ * @set:	Current set of inputs to read (0 .. PIUIO_MULTIPLEX - 1) or -1
+ *              to disable multiplexing
  */
 struct piuio {
 	struct input_dev *idev;
@@ -192,8 +193,9 @@ static void piuio_in_completed(struct urb *urb)
 		goto resubmit;
 	}
 
-	/* Get the index of the previous input set */
-	cur_set = (piu->set + PIUIO_MULTIPLEX - 1) % PIUIO_MULTIPLEX;
+	/* Get the index of the previous input set (always 0 if no multiplexer) */
+	cur_set = piu->set < 0 ? 0 :
+		(piu->set + PIUIO_MULTIPLEX - 1) % PIUIO_MULTIPLEX;
 
 	/* Note what has changed in this input set, then store the inputs for
 	 * next time */
@@ -202,14 +204,16 @@ static void piuio_in_completed(struct urb *urb)
 		piu->old_inputs[cur_set][i] = piu->inputs[i];
 	}
 
-	/* Changes only count when none of the corresponding inputs in other
-	 * sets are pressed.  Since "pressed" reads as 0, we can use & to knock
-	 * those bits out of the changes. */
-	for (s = 0; s < PIUIO_MULTIPLEX; s++) {
-		if (s == cur_set)
-			continue;
-		for (i = 0; i < PIUIO_MSG_LONGS; i++)
-			changed[i] &= piu->old_inputs[s][i];
+	/* If we are using a multiplexer, changes only count when none of the
+	 * corresponding inputs in other sets are pressed.  Since "pressed"
+	 * reads as 0, we can use & to knock those bits out of the changes. */
+	if (piu->set >= 0) {
+		for (s = 0; s < PIUIO_MULTIPLEX; s++) {
+			if (s == cur_set)
+				continue;
+			for (i = 0; i < PIUIO_MSG_LONGS; i++)
+				changed[i] &= piu->old_inputs[s][i];
+		}
 	}
 
 	/* For each input which has changed state, report whether it was pressed
@@ -241,21 +245,26 @@ static void piuio_out_completed(struct urb *urb)
 		goto resubmit;
 	}
 
+	/* Copy in the new outputs */
+	memcpy(piu->outputs, piu->new_outputs, PIUIO_MSG_SZ);
+
+	/* If we have a multiplexer, switch to the next input set in rotation
+	 * and set the appropriate output bits */
+	if (piu->set >= 0) {
+		piu->set = (piu->set + 1) % PIUIO_MULTIPLEX;
+
 /* The code below assumes that PIUIO_MULTIPLEX is 4.  It could be made more
  * general if anyone happens to have a setup where that isn't the case. */
 #if PIUIO_MULTIPLEX != 4
 #error The PIUIO driver only works when PIUIO_MULTIPLEX is 4.
 #endif
 
-	/* Switch to the next input set in rotation */
-	piu->set = (piu->set + 1) % PIUIO_MULTIPLEX;
-
-	/* Copy in the new outputs and set multiplexer bits */
-	memcpy(piu->outputs, piu->new_outputs, PIUIO_MSG_SZ);
-	piu->outputs[0] &= ~3;
-	piu->outputs[0] |= piu->set;
-	piu->outputs[2] &= ~3;
-	piu->outputs[2] |= piu->set;
+		/* Set multiplexer bits */
+		piu->outputs[0] &= ~3;
+		piu->outputs[0] |= piu->set;
+		piu->outputs[2] &= ~3;
+		piu->outputs[2] |= piu->set;
+	}
 	
 resubmit:
 	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
