@@ -44,6 +44,8 @@
 /* Number of usable inputs and outputs */
 #define PIUIO_INPUTS 48
 #define PIUIO_OUTPUTS 48
+#define PIUIO_BBINPUTS 8
+#define PIUIO_BBOUTPUTS 8
 
 /* Number of sets of inputs multiplexed together */
 #define PIUIO_MULTIPLEX 4
@@ -149,6 +151,17 @@ static const char *led_names[] = {
 	"piuio::output47",
 };
 
+static const char *bbled_names[] = {
+	"piuio::bboutput0",
+	"piuio::bboutput1",
+	"piuio::bboutput2",
+	"piuio::bboutput3",
+	"piuio::bboutput4",
+	"piuio::bboutput5",
+	"piuio::bboutput6",
+	"piuio::bboutput7",
+};
+
 
 /*
  * Auxiliary functions for reporting input events
@@ -218,7 +231,7 @@ static void piuio_in_completed(struct urb *urb)
 
 	/* For each input which has changed state, report whether it was pressed
 	 * or released based on the current value. */
-	for_each_set_bit(b, changed, PIUIO_INPUTS)
+	for_each_set_bit(b, changed, piu->set < 0 ? PIUIO_BBINPUTS : PIUIO_INPUTS)
 		report_key(piu->idev, b, !test_bit(b, piu->inputs));
 
 	/* Done reporting input events */
@@ -373,7 +386,7 @@ static void piuio_input_init(struct piuio *piu, struct device *parent)
 	set_bit(EV_ABS, idev->evbit);
 
 	/* Configure buttons */
-	for (i = 0; i < PIUIO_INPUTS; i++)
+	for (i = 0; i < (piu->set < 0 ? PIUIO_BBINPUTS : PIUIO_INPUTS); i++)
 		set_bit(keycode(i), idev->keybit);
 	clear_bit(0, idev->keybit);
 
@@ -398,9 +411,9 @@ static int piuio_leds_init(struct piuio *piu)
 	struct attribute **attr;
 	int ret;
 
-	for (i = 0; i < PIUIO_OUTPUTS; i++) {
+	for (i = 0; i < (piu->set < 0 ? PIUIO_BBOUTPUTS : PIUIO_OUTPUTS); i++) {
 		/* Initialize led device and point back to piuio struct */
-		piu->led[i].dev.name = led_names[i];
+		piu->led[i].dev.name = (piu->set < 0 ? bbled_names[i] : led_names[i]);
 		piu->led[i].dev.brightness_set = piuio_led_set;
 		piu->led[i].piu = piu;
 
@@ -433,7 +446,7 @@ out_unregister:
 static void piuio_leds_destroy(struct piuio *piu)
 {
 	int i;
-	for (i = 0; i < PIUIO_OUTPUTS; i++)
+	for (i = 0; i < (piu->set < 0 ? PIUIO_BBOUTPUTS : PIUIO_OUTPUTS); i++)
 		led_classdev_unregister(&piu->led[i].dev);
 }
 
