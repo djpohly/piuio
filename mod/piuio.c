@@ -206,8 +206,6 @@ static struct piuio_devtype piuio_dev_bb = {
 static int keycode(unsigned int pin)
 {
 	/* Use joystick buttons first, then the extra "trigger happy" range. */
-	if (pin >= PIUIO_INPUTS)
-		return KEY_RESERVED;
 	if (pin < 16)
 		return BTN_JOYSTICK + pin;
 	pin -= 16;
@@ -216,11 +214,6 @@ static int keycode(unsigned int pin)
 
 static void report_key(struct input_dev *idev, unsigned int pin, int press)
 {
-	int code = keycode(pin);
-
-	if (code == KEY_RESERVED)
-		return;
-
 	input_event(idev, EV_MSC, MSC_SCAN, pin + 1);
 	input_report_key(idev, keycode(pin), press);
 }
