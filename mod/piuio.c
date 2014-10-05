@@ -79,6 +79,7 @@ struct piuio_devtype {
 
 /**
  * struct piuio - state of each attached PIUIO
+ * @type:	Type of PIUIO device (currently either pad or buttonboard)
  * @idev:	Input device associated with this PIUIO
  * @phys:	Physical path of the device. @idev's phys field points to this
  *		buffer
@@ -98,6 +99,8 @@ struct piuio_devtype {
  *              to disable multiplexing
  */
 struct piuio {
+	struct piuio_devtype *type;
+
 	struct input_dev *idev;
 	char phys[64];
 
@@ -178,6 +181,24 @@ static const char *bbled_names[] = {
 	"piuio::bboutput7",
 };
 
+/* Pad device parameters */
+static struct piuio_devtype piuio_dev_pad = {
+	.led_names = led_names,
+	.inputs = 48,
+	.outputs = 48,
+	.mplex = 4,
+	.mplex_bits = 2,
+};
+
+/* Button board device parameters */
+static struct piuio_devtype piuio_dev_bb = {
+	.led_names = bbled_names,
+	.inputs = 8,
+	.outputs = 8,
+	.mplex = 1,
+	.mplex_bits = 0,
+};
+
 
 /*
  * Auxiliary functions for reporting input events
@@ -223,8 +244,7 @@ static void piuio_in_completed(struct urb *urb)
 	}
 
 	/* Get the index of the previous input set (always 0 if no multiplexer) */
-	cur_set = piu->set < 0 ? 0 :
-		(piu->set + PIUIO_MULTIPLEX - 1) % PIUIO_MULTIPLEX;
+	cur_set = (piu->set + piu->type->mplex - 1) % piu->type->mplex;
 
 	/* Note what has changed in this input set, then store the inputs for
 	 * next time */
@@ -236,18 +256,16 @@ static void piuio_in_completed(struct urb *urb)
 	/* If we are using a multiplexer, changes only count when none of the
 	 * corresponding inputs in other sets are pressed.  Since "pressed"
 	 * reads as 0, we can use & to knock those bits out of the changes. */
-	if (piu->set >= 0) {
-		for (s = 0; s < PIUIO_MULTIPLEX; s++) {
-			if (s == cur_set)
-				continue;
-			for (i = 0; i < PIUIO_MSG_LONGS; i++)
-				changed[i] &= piu->old_inputs[s][i];
-		}
+	for (s = 0; s < piu->type->mplex; s++) {
+		if (s == cur_set)
+			continue;
+		for (i = 0; i < PIUIO_MSG_LONGS; i++)
+			changed[i] &= piu->old_inputs[s][i];
 	}
 
 	/* For each input which has changed state, report whether it was pressed
 	 * or released based on the current value. */
-	for_each_set_bit(b, changed, piu->set < 0 ? PIUIO_BBINPUTS : PIUIO_INPUTS)
+	for_each_set_bit(b, changed, piu->type->inputs)
 		report_key(piu->idev, b, !test_bit(b, piu->inputs));
 
 	/* Done reporting input events */
@@ -279,21 +297,13 @@ static void piuio_out_completed(struct urb *urb)
 
 	/* If we have a multiplexer, switch to the next input set in rotation
 	 * and set the appropriate output bits */
-	if (piu->set >= 0) {
-		piu->set = (piu->set + 1) % PIUIO_MULTIPLEX;
+	piu->set = (piu->set + 1) % piu->type->mplex;
 
-/* The code below assumes that PIUIO_MULTIPLEX is 4.  It could be made more
- * general if anyone happens to have a setup where that isn't the case. */
-#if PIUIO_MULTIPLEX != 4
-#error The PIUIO driver only works when PIUIO_MULTIPLEX is 4.
-#endif
-
-		/* Set multiplexer bits */
-		piu->outputs[0] &= ~3;
-		piu->outputs[0] |= piu->set;
-		piu->outputs[2] &= ~3;
-		piu->outputs[2] |= piu->set;
-	}
+	/* Set multiplexer bits */
+	piu->outputs[0] &= ~((1 << piu->type->mplex_bits) - 1);
+	piu->outputs[0] |= piu->set;
+	piu->outputs[2] &= ~((1 << piu->type->mplex_bits) - 1);
+	piu->outputs[2] |= piu->set;
 	
 resubmit:
 	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
@@ -368,7 +378,7 @@ static void piuio_led_set(struct led_classdev *dev, enum led_brightness b)
 	int n;
 
 	n = led - piu->led;
-	if (n > PIUIO_OUTPUTS) {
+	if (n > piu->type->outputs) {
 		dev_err(&piu->udev->dev, "piuio led: bad number %d\n", n);
 		return;
 	}
@@ -402,7 +412,7 @@ static void piuio_input_init(struct piuio *piu, struct device *parent)
 	set_bit(EV_ABS, idev->evbit);
 
 	/* Configure buttons */
-	for (i = 0; i < (piu->set < 0 ? PIUIO_BBINPUTS : PIUIO_INPUTS); i++)
+	for (i = 0; i < piu->type->inputs; i++)
 		set_bit(keycode(i), idev->keybit);
 	clear_bit(0, idev->keybit);
 
@@ -427,9 +437,9 @@ static int piuio_leds_init(struct piuio *piu)
 	struct attribute **attr;
 	int ret;
 
-	for (i = 0; i < (piu->set < 0 ? PIUIO_BBOUTPUTS : PIUIO_OUTPUTS); i++) {
+	for (i = 0; i < piu->type->outputs; i++) {
 		/* Initialize led device and point back to piuio struct */
-		piu->led[i].dev.name = (piu->set < 0 ? bbled_names[i] : led_names[i]);
+		piu->led[i].dev.name = piu->type->led_names[i];
 		piu->led[i].dev.brightness_set = piuio_led_set;
 		piu->led[i].piu = piu;
 
@@ -462,7 +472,7 @@ out_unregister:
 static void piuio_leds_destroy(struct piuio *piu)
 {
 	int i;
-	for (i = 0; i < (piu->set < 0 ? PIUIO_BBOUTPUTS : PIUIO_OUTPUTS); i++)
+	for (i = 0; i < piu->type->outputs; i++)
 		led_classdev_unregister(&piu->led[i].dev);
 }
 
@@ -547,8 +557,12 @@ static int piuio_probe(struct usb_interface *intf,
 
 	if (id->idVendor == USB_VENDOR_ID_BTNBOARD &&
 			id->idProduct == USB_PRODUCT_ID_BTNBOARD) {
-		/* Disable multiplexing */
+		/* Button board card: disable multiplexing */
+		piu->type = &piuio_dev_bb;
 		piu->set = -1;
+	} else {
+		/* Pad card */
+		piu->type = &piuio_dev_pad;
 	}
 
 	piuio_input_init(piu, &intf->dev);
