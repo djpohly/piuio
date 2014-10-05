@@ -212,12 +212,6 @@ static int keycode(unsigned int pin)
 	return BTN_TRIGGER_HAPPY + pin;
 }
 
-static void report_key(struct input_dev *idev, unsigned int pin, int press)
-{
-	input_event(idev, EV_MSC, MSC_SCAN, pin + 1);
-	input_report_key(idev, keycode(pin), press);
-}
-
 
 /*
  * URB completion handlers
@@ -258,8 +252,10 @@ static void piuio_in_completed(struct urb *urb)
 
 	/* For each input which has changed state, report whether it was pressed
 	 * or released based on the current value. */
-	for_each_set_bit(b, changed, piu->type->inputs)
-		report_key(piu->idev, b, !test_bit(b, piu->inputs));
+	for_each_set_bit(b, changed, piu->type->inputs) {
+		input_event(piu->idev, EV_MSC, MSC_SCAN, b + 1);
+		input_report_key(piu->idev, keycode(b), !test_bit(b, piu->inputs));
+	}
 
 	/* Done reporting input events */
 	input_sync(piu->idev);
