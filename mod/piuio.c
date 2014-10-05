@@ -62,6 +62,22 @@ struct piuio_led {
 };
 
 /**
+ * struct piuio_devtype - parameters for different types of PIUIO devices
+ * @led_names:	Array of LED names, of length @outputs, to use in sysfs
+ * @inputs:	Number of input pins
+ * @outputs:	Number of output pins
+ * @mplex:	Number of sets of inputs
+ * @mplex_bits:	Number of output bits reserved for multiplexing
+ */
+struct piuio_devtype {
+	const char **led_names;
+	int inputs;
+	int outputs;
+	int mplex;
+	int mplex_bits;
+};
+
+/**
  * struct piuio - state of each attached PIUIO
  * @idev:	Input device associated with this PIUIO
  * @phys:	Physical path of the device. @idev's phys field points to this
