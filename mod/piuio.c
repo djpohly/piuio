@@ -532,13 +532,23 @@ static int piuio_probe(struct usb_interface *intf,
 	struct input_dev *idev;
 	int ret = -ENOMEM;
 
-	/* Allocate PIUIO state and input device */
+	/* Allocate PIUIO state and determine device type */
 	piu = kzalloc(sizeof(struct piuio), GFP_KERNEL);
 	if (!piu) {
 		dev_err(&intf->dev, "piuio probe: failed to allocate state\n");
 		return ret;
 	}
 
+	if (id->idVendor == USB_VENDOR_ID_BTNBOARD &&
+			id->idProduct == USB_PRODUCT_ID_BTNBOARD) {
+		/* Button board card */
+		piu->type = &piuio_dev_bb;
+	} else {
+		/* Pad card */
+		piu->type = &piuio_dev_pad;
+	}
+
+	/* Allocate input device for generating buttonpresses */
 	idev = input_allocate_device();
 	if (!idev) {
 		dev_err(&intf->dev, "piuio probe: failed to allocate input dev\n");
@@ -550,16 +560,6 @@ static int piuio_probe(struct usb_interface *intf,
 	ret = piuio_init(piu, idev, udev);
 	if (ret)
 		goto err;
-
-	if (id->idVendor == USB_VENDOR_ID_BTNBOARD &&
-			id->idProduct == USB_PRODUCT_ID_BTNBOARD) {
-		/* Button board card: disable multiplexing */
-		piu->type = &piuio_dev_bb;
-		piu->set = -1;
-	} else {
-		/* Pad card */
-		piu->type = &piuio_dev_pad;
-	}
 
 	piuio_input_init(piu, &intf->dev);
 
