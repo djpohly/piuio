@@ -109,7 +109,7 @@ struct piuio {
 	struct usb_ctrlrequest cr_in, cr_out;
 	wait_queue_head_t shutdown_wait;
 
-	unsigned long old_inputs[PIUIO_MULTIPLEX][PIUIO_MSG_LONGS];
+	unsigned long (*old_inputs)[PIUIO_MSG_LONGS];
 	unsigned long inputs[PIUIO_MSG_LONGS];
 	unsigned char outputs[PIUIO_MSG_SZ];
 	unsigned char new_outputs[PIUIO_MSG_SZ];
@@ -475,11 +475,22 @@ static void piuio_leds_destroy(struct piuio *piu)
 static int piuio_init(struct piuio *piu, struct input_dev *idev,
 		struct usb_device *udev)
 {
-	/* If this function returns an error, piuio_destroy will be called */
+	/* Note: if this function returns an error, piuio_destroy will still be
+	 * called, so we don't need to clean up here */
+
+	/* Allocate USB request blocks */
 	piu->in = usb_alloc_urb(0, GFP_KERNEL);
 	piu->out = usb_alloc_urb(0, GFP_KERNEL);
 	if (!piu->in || !piu->out) {
 		dev_err(&udev->dev, "piuio init: failed to allocate URBs\n");
+		return -ENOMEM;
+	}
+
+	/* Create dynamically allocated arrays */
+	piu->old_inputs = kzalloc(sizeof(*piu->old_inputs) * piu->type->mplex,
+		GFP_KERNEL);
+	if (!piu->old_inputs) {
+		dev_err(&udev->dev, "piuio init: failed to allocate old_inputs\n");
 		return -ENOMEM;
 	}
 
@@ -516,6 +527,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 static void piuio_destroy(struct piuio *piu)
 {
 	/* These handle NULL gracefully, so we can call this if init fails */
+	kfree(piu->old_inputs);
 	usb_free_urb(piu->out);
 	usb_free_urb(piu->in);
 }
@@ -552,6 +564,7 @@ static int piuio_probe(struct usb_interface *intf,
 	idev = input_allocate_device();
 	if (!idev) {
 		dev_err(&intf->dev, "piuio probe: failed to allocate input dev\n");
+		kfree(piu->old_inputs);
 		kfree(piu);
 		return ret;
 	}
