@@ -426,11 +426,6 @@ static int piuio_leds_init(struct piuio *piu)
 	struct attribute **attr;
 	int ret;
 
-	/* Allocate led class devices */
-	piu->led = kzalloc(sizeof(*piu->led) * piu->type->outputs, GFP_KERNEL);
-	if (!piu->led)
-		return -ENOMEM;
-
 	for (i = 0; i < piu->type->outputs; i++) {
 		/* Initialize led device and point back to piuio struct */
 		piu->led[i].dev.name = piu->type->led_names[i];
@@ -460,7 +455,6 @@ static int piuio_leds_init(struct piuio *piu)
 out_unregister:
 	for (--i; i >= 0; i--)
 		led_classdev_unregister(&piu->led[i].dev);
-	kfree(piu->led);
 	return ret;
 }
 
@@ -469,7 +463,6 @@ static void piuio_leds_destroy(struct piuio *piu)
 	int i;
 	for (i = 0; i < piu->type->outputs; i++)
 		led_classdev_unregister(&piu->led[i].dev);
-	kfree(piu->led);
 }
 
 static int piuio_init(struct piuio *piu, struct input_dev *idev,
@@ -491,6 +484,12 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 		GFP_KERNEL);
 	if (!piu->old_inputs) {
 		dev_err(&udev->dev, "piuio init: failed to allocate old_inputs\n");
+		return -ENOMEM;
+	}
+
+	piu->led = kzalloc(sizeof(*piu->led) * piu->type->outputs, GFP_KERNEL);
+	if (!piu->led) {
+		dev_err(&udev->dev, "piuio init: failed to allocate led devices\n");
 		return -ENOMEM;
 	}
 
@@ -526,7 +525,9 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 
 static void piuio_destroy(struct piuio *piu)
 {
-	/* These handle NULL gracefully, so we can call this if init fails */
+	/* These handle NULL gracefully, so we can call this to clean up if init
+	 * fails */
+	kfree(piu->led);
 	kfree(piu->old_inputs);
 	usb_free_urb(piu->out);
 	usb_free_urb(piu->in);
