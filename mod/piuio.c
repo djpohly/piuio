@@ -114,7 +114,7 @@ struct piuio {
 	unsigned char outputs[PIUIO_MSG_SZ];
 	unsigned char new_outputs[PIUIO_MSG_SZ];
 
-	struct piuio_led led[PIUIO_OUTPUTS];
+	struct piuio_led *led;
 
 	int set;
 };
@@ -426,6 +426,11 @@ static int piuio_leds_init(struct piuio *piu)
 	struct attribute **attr;
 	int ret;
 
+	/* Allocate led class devices */
+	piu->led = kzalloc(sizeof(*piu->led) * piu->type->outputs, GFP_KERNEL);
+	if (!piu->led)
+		return -ENOMEM;
+
 	for (i = 0; i < piu->type->outputs; i++) {
 		/* Initialize led device and point back to piuio struct */
 		piu->led[i].dev.name = piu->type->led_names[i];
@@ -455,6 +460,7 @@ static int piuio_leds_init(struct piuio *piu)
 out_unregister:
 	for (--i; i >= 0; i--)
 		led_classdev_unregister(&piu->led[i].dev);
+	kfree(piu->led);
 	return ret;
 }
 
@@ -463,6 +469,7 @@ static void piuio_leds_destroy(struct piuio *piu)
 	int i;
 	for (i = 0; i < piu->type->outputs; i++)
 		led_classdev_unregister(&piu->led[i].dev);
+	kfree(piu->led);
 }
 
 static int piuio_init(struct piuio *piu, struct input_dev *idev,
