@@ -41,15 +41,6 @@
 #define PIUIO_MSG_SZ 8
 #define PIUIO_MSG_LONGS (PIUIO_MSG_SZ / sizeof(unsigned long))
 
-/* Number of usable inputs and outputs */
-#define PIUIO_INPUTS 48
-#define PIUIO_OUTPUTS 48
-#define PIUIO_BBINPUTS 8
-#define PIUIO_BBOUTPUTS 8
-
-/* Number of sets of inputs multiplexed together */
-#define PIUIO_MULTIPLEX 4
-
 
 /**
  * struct piuio_led - auxiliary struct for led devices
@@ -95,8 +86,7 @@ struct piuio_devtype {
  * @outputs:	Buffer for the @out URB
  * @new_outputs:
  * 		Staging for the @outputs buffer
- * @set:	Current set of inputs to read (0 .. PIUIO_MULTIPLEX - 1) or -1
- *              to disable multiplexing
+ * @set:	Current set of inputs to read (0 .. @type->mplex - 1)
  */
 struct piuio {
 	struct piuio_devtype *type;
