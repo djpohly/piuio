@@ -70,7 +70,7 @@ struct piuio_devtype {
 
 /**
  * struct piuio - state of each attached PIUIO
- * @type:	Type of PIUIO device (currently either pad or buttonboard)
+ * @type:	Type of PIUIO device (currently either full or buttonboard)
  * @idev:	Input device associated with this PIUIO
  * @phys:	Physical path of the device. @idev's phys field points to this
  *		buffer
@@ -171,8 +171,8 @@ static const char *bbled_names[] = {
 	"piuio::bboutput7",
 };
 
-/* Pad device parameters */
-static struct piuio_devtype piuio_dev_pad = {
+/* Full device parameters */
+static struct piuio_devtype piuio_dev_full = {
 	.led_names = led_names,
 	.inputs = 48,
 	.outputs = 48,
@@ -547,8 +547,8 @@ static int piuio_probe(struct usb_interface *intf,
 		/* Button board card */
 		piu->type = &piuio_dev_bb;
 	} else {
-		/* Pad card */
-		piu->type = &piuio_dev_pad;
+		/* Full card */
+		piu->type = &piuio_dev_full;
 	}
 
 	/* Allocate input device for generating buttonpresses */
