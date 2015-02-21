@@ -41,6 +41,13 @@
 #define PIUIO_MSG_SZ 8
 #define PIUIO_MSG_LONGS (PIUIO_MSG_SZ / sizeof(unsigned long))
 
+/* Input keycode ranges */
+#define PIUIO_BTN_REG BTN_JOYSTICK
+#define PIUIO_NUM_REG (BTN_GAMEPAD - BTN_JOYSTICK)
+#define PIUIO_BTN_EXTRA BTN_TRIGGER_HAPPY
+#define PIUIO_NUM_EXTRA (KEY_MAX - BTN_TRIGGER_HAPPY)
+#define PIUIO_NUM_BTNS (PIUIO_NUM_REG + PIUIO_NUM_EXTRA)
+
 
 /**
  * struct piuio_led - auxiliary struct for led devices
@@ -174,7 +181,7 @@ static const char *bbled_names[] = {
 /* Full device parameters */
 static struct piuio_devtype piuio_dev_full = {
 	.led_names = led_names,
-	.inputs = 48,
+	.inputs = (PIUIO_NUM_BTNS < 48) ? PIUIO_NUM_BTNS : 48,
 	.outputs = 48,
 	.mplex = 4,
 	.mplex_bits = 2,
@@ -183,7 +190,7 @@ static struct piuio_devtype piuio_dev_full = {
 /* Button board device parameters */
 static struct piuio_devtype piuio_dev_bb = {
 	.led_names = bbled_names,
-	.inputs = 8,
+	.inputs = (PIUIO_NUM_BTNS < 8) ? PIUIO_NUM_BTNS : 8,
 	.outputs = 8,
 	.mplex = 1,
 	.mplex_bits = 0,
@@ -196,10 +203,10 @@ static struct piuio_devtype piuio_dev_bb = {
 static int keycode(unsigned int pin)
 {
 	/* Use joystick buttons first, then the extra "trigger happy" range. */
-	if (pin < 16)
-		return BTN_JOYSTICK + pin;
-	pin -= 16;
-	return BTN_TRIGGER_HAPPY + pin;
+	if (pin < PIUIO_NUM_REG)
+		return PIUIO_BTN_REG + pin;
+	pin -= PIUIO_NUM_REG;
+	return PIUIO_BTN_EXTRA + pin;
 }
 
 
