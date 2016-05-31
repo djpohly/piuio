@@ -1,4 +1,4 @@
-ifneq ($(KERNELRELEASE),)
+ifneq ($(PATCHLEVEL),)
 
 # Kbuild configuration
 obj-m := piuio.o
