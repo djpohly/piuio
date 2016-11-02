@@ -639,7 +639,7 @@ static struct usb_driver piuio_driver = {
 
 MODULE_AUTHOR("Devin J. Pohly");
 MODULE_DESCRIPTION("PIUIO input/output driver");
-MODULE_VERSION("0.3.1");
+MODULE_VERSION("1.0");
 MODULE_LICENSE("GPL");
 
 module_usb_driver(piuio_driver);
