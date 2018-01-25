@@ -577,11 +577,6 @@ static void piuio_disconnect(struct usb_interface *intf)
 	struct piuio *piu = usb_get_intfdata(intf);
 
 	usb_set_intfdata(intf, NULL);
-	if (!piu) {
-		dev_err(&intf->dev, "piuio disconnect: uninitialized device?\n");
-		return;
-	}
-
 	usb_kill_urb(piu->in);
 	usb_kill_urb(piu->out);
 	input_unregister_device(piu->idev);
