@@ -55,7 +55,7 @@ struct piuio_led {
 	struct led_classdev dev;
 };
 
-static const char *led_names[] = {
+static const char *const led_names[] = {
 	"piuio::output0",
 	"piuio::output1",
 	"piuio::output2",
@@ -106,7 +106,7 @@ static const char *led_names[] = {
 	"piuio::output47",
 };
 
-static const char *bbled_names[] = {
+static const char *const bbled_names[] = {
 	"piuio::bboutput0",
 	"piuio::bboutput1",
 	"piuio::bboutput2",
@@ -128,7 +128,7 @@ static const char *bbled_names[] = {
  */
 struct piuio_devtype {
 #ifdef CONFIG_LEDS_CLASS
-	const char **led_names;
+	const char *const *led_names;
 #endif
 	int inputs;
 	int outputs;
