@@ -414,8 +414,6 @@ static void piuio_input_init(struct piuio *piu, struct device *parent)
 static int piuio_leds_init(struct piuio *piu)
 {
 	int i;
-	const struct attribute_group **ag;
-	struct attribute **attr;
 	int ret;
 
 	for (i = 0; i < piu->type->outputs; i++) {
@@ -428,18 +426,6 @@ static int piuio_leds_init(struct piuio *piu)
 		ret = led_classdev_register(&piu->udev->dev, &piu->led[i].dev);
 		if (ret)
 			goto out_unregister;
-
-		/* Relax permissions on led attributes */
-		for (ag = piu->led[i].dev.dev->class->dev_groups; *ag; ag++) {
-			for (attr = (*ag)->attrs; *attr; attr++) {
-				ret = sysfs_chmod_file(&piu->led[i].dev.dev->kobj,
-						*attr, S_IRUGO | S_IWUGO);
-				if (ret) {
-					led_classdev_unregister(&piu->led[i].dev);
-					goto out_unregister;
-				}
-			}
-		}
 	}
 
 	return 0;
