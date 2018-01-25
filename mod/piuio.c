@@ -430,10 +430,8 @@ static int piuio_leds_init(struct piuio *piu)
 	int ret;
 
 	piu->led = kcalloc(piu->type->outputs, sizeof(*piu->led), GFP_KERNEL);
-	if (!piu->led) {
-		dev_err(&piu->udev->dev, "piuio init: failed to allocate led devices\n");
+	if (!piu->led)
 		return -ENOMEM;
-	}
 
 	for (i = 0; i < piu->type->outputs; i++) {
 		/* Initialize led device and point back to piuio struct */
@@ -480,18 +478,14 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	/* Allocate USB request blocks */
 	piu->in = usb_alloc_urb(0, GFP_KERNEL);
 	piu->out = usb_alloc_urb(0, GFP_KERNEL);
-	if (!piu->in || !piu->out) {
-		dev_err(&udev->dev, "piuio init: failed to allocate URBs\n");
+	if (!piu->in || !piu->out)
 		return -ENOMEM;
-	}
 
 	/* Create dynamically allocated arrays */
 	piu->old_inputs = kcalloc(piu->type->mplex, sizeof(*piu->old_inputs),
 		GFP_KERNEL);
-	if (!piu->old_inputs) {
-		dev_err(&udev->dev, "piuio init: failed to allocate old_inputs\n");
+	if (!piu->old_inputs)
 		return -ENOMEM;
-	}
 
 	init_waitqueue_head(&piu->shutdown_wait);
 
@@ -547,10 +541,8 @@ static int piuio_probe(struct usb_interface *intf,
 
 	/* Allocate PIUIO state and determine device type */
 	piu = kzalloc(sizeof(struct piuio), GFP_KERNEL);
-	if (!piu) {
-		dev_err(&intf->dev, "piuio probe: failed to allocate state\n");
+	if (!piu)
 		return ret;
-	}
 
 	if (id->idVendor == USB_VENDOR_ID_BTNBOARD &&
 			id->idProduct == USB_PRODUCT_ID_BTNBOARD) {
@@ -564,7 +556,6 @@ static int piuio_probe(struct usb_interface *intf,
 	/* Allocate input device for generating buttonpresses */
 	idev = input_allocate_device();
 	if (!idev) {
-		dev_err(&intf->dev, "piuio probe: failed to allocate input dev\n");
 		kfree(piu->old_inputs);
 		kfree(piu);
 		return ret;
