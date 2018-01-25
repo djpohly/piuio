@@ -278,6 +278,7 @@ resubmit:
 static void piuio_out_cb(struct urb *urb)
 {
 	struct piuio *piu = urb->context;
+	int mpmask = GENMASK(piu->type->mplex_bits - 1, 0);
 	int ret = urb->status;
 
 	if (ret) {
@@ -292,9 +293,9 @@ static void piuio_out_cb(struct urb *urb)
 	piu->set = (piu->set + 1) % piu->type->mplex;
 
 	/* Set multiplexer bits */
-	piu->outputs[0] &= ~((1 << piu->type->mplex_bits) - 1);
+	piu->outputs[0] &= mpmask;
 	piu->outputs[0] |= piu->set;
-	piu->outputs[2] &= ~((1 << piu->type->mplex_bits) - 1);
+	piu->outputs[2] &= mpmask;
 	piu->outputs[2] |= piu->set;
 
 resubmit:
@@ -409,13 +410,7 @@ static void piuio_led_set(struct led_classdev *dev, enum led_brightness b)
 {
 	struct piuio_led *led = container_of(dev, struct piuio_led, dev);
 	struct piuio *piu = led->piu;
-	int n;
-
-	n = led - piu->led;
-	if (n > piu->type->outputs) {
-		dev_err(&piu->udev->dev, "piuio led: bad number %d\n", n);
-		return;
-	}
+	int n = led - piu->led;
 
 	/* Meh, forget atomicity, these aren't super-important */
 	if (b)
@@ -537,12 +532,12 @@ static int piuio_probe(struct usb_interface *intf,
 	struct piuio *piu;
 	struct usb_device *udev = interface_to_usbdev(intf);
 	struct input_dev *idev;
-	int ret = -ENOMEM;
+	int ret;
 
 	/* Allocate PIUIO state and determine device type */
-	piu = kzalloc(sizeof(struct piuio), GFP_KERNEL);
+	piu = kzalloc(sizeof(*piu), GFP_KERNEL);
 	if (!piu)
-		return ret;
+		return -ENOMEM;
 
 	if (id->idVendor == USB_VENDOR_ID_BTNBOARD &&
 			id->idProduct == USB_PRODUCT_ID_BTNBOARD) {
@@ -558,7 +553,7 @@ static int piuio_probe(struct usb_interface *intf,
 	if (!idev) {
 		kfree(piu->old_inputs);
 		kfree(piu);
-		return ret;
+		return -ENOMEM;
 	}
 
 	/* Initialize PIUIO state and input device */
