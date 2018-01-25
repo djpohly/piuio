@@ -497,7 +497,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	/* Prepare URB for multiplexer and outputs */
 	piu->cr_out.bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR |
 		USB_RECIP_DEVICE;
-	piu->cr_out.bRequest = cpu_to_le16(PIUIO_MSG_REQ);
+	piu->cr_out.bRequest = PIUIO_MSG_REQ;
 	piu->cr_out.wValue = cpu_to_le16(PIUIO_MSG_VAL);
 	piu->cr_out.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
 	piu->cr_out.wLength = cpu_to_le16(PIUIO_MSG_SZ);
@@ -508,7 +508,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	/* Prepare URB for inputs */
 	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR |
 		USB_RECIP_DEVICE;
-	piu->cr_in.bRequest = cpu_to_le16(PIUIO_MSG_REQ);
+	piu->cr_in.bRequest = PIUIO_MSG_REQ;
 	piu->cr_in.wValue = cpu_to_le16(PIUIO_MSG_VAL);
 	piu->cr_in.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
 	piu->cr_in.wLength = cpu_to_le16(PIUIO_MSG_SZ);
