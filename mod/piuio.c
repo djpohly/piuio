@@ -427,7 +427,7 @@ static int piuio_leds_init(struct piuio *piu)
 	int i;
 	int ret;
 
-	piu->led = kzalloc(sizeof(*piu->led) * piu->type->outputs, GFP_KERNEL);
+	piu->led = kcalloc(piu->type->outputs, sizeof(*piu->led), GFP_KERNEL);
 	if (!piu->led) {
 		dev_err(&piu->udev->dev, "piuio init: failed to allocate led devices\n");
 		return -ENOMEM;
@@ -482,7 +482,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	}
 
 	/* Create dynamically allocated arrays */
-	piu->old_inputs = kzalloc(sizeof(*piu->old_inputs) * piu->type->mplex,
+	piu->old_inputs = kcalloc(piu->type->mplex, sizeof(*piu->old_inputs),
 		GFP_KERNEL);
 	if (!piu->old_inputs) {
 		dev_err(&udev->dev, "piuio init: failed to allocate old_inputs\n");
