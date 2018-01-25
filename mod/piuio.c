@@ -44,6 +44,7 @@
 #define PIUIO_NUM_BTNS (PIUIO_NUM_REG + PIUIO_NUM_EXTRA)
 
 
+#ifdef CONFIG_LEDS_CLASS
 /**
  * struct piuio_led - auxiliary struct for led devices
  * @piu:	Pointer back to the enclosing structure
@@ -52,63 +53,6 @@
 struct piuio_led {
 	struct piuio *piu;
 	struct led_classdev dev;
-};
-
-/**
- * struct piuio_devtype - parameters for different types of PIUIO devices
- * @led_names:	Array of LED names, of length @outputs, to use in sysfs
- * @inputs:	Number of input pins
- * @outputs:	Number of output pins
- * @mplex:	Number of sets of inputs
- * @mplex_bits:	Number of output bits reserved for multiplexing
- */
-struct piuio_devtype {
-	const char **led_names;
-	int inputs;
-	int outputs;
-	int mplex;
-	int mplex_bits;
-};
-
-/**
- * struct piuio - state of each attached PIUIO
- * @type:	Type of PIUIO device (currently either full or buttonboard)
- * @idev:	Input device associated with this PIUIO
- * @phys:	Physical path of the device. @idev's phys field points to this
- *		buffer
- * @udev:	USB device associated with this PIUIO
- * @in:		URB for requesting the current state of one set of inputs
- * @out:	URB for sending data to outputs and multiplexer
- * @cr_in:	Setup packet for @in URB
- * @cr_out:	Setup packet for @out URB
- * @old_inputs:	Previous state of input pins from the @in URB for each of the
- *		input sets.  These are used to determine when a press or release
- *		has happened for a group of correlated inputs.
- * @inputs:	Buffer for the @in URB
- * @outputs:	Buffer for the @out URB
- * @new_outputs:
- * 		Staging for the @outputs buffer
- * @set:	Current set of inputs to read (0 .. @type->mplex - 1)
- */
-struct piuio {
-	struct piuio_devtype *type;
-
-	struct input_dev *idev;
-	char phys[64];
-
-	struct usb_device *udev;
-	struct urb *in, *out;
-	struct usb_ctrlrequest cr_in, cr_out;
-	wait_queue_head_t shutdown_wait;
-
-	unsigned long (*old_inputs)[PIUIO_MSG_LONGS];
-	unsigned long inputs[PIUIO_MSG_LONGS];
-	unsigned char outputs[PIUIO_MSG_SZ];
-	unsigned char new_outputs[PIUIO_MSG_SZ];
-
-	struct piuio_led *led;
-
-	int set;
 };
 
 static const char *led_names[] = {
@@ -172,10 +116,74 @@ static const char *bbled_names[] = {
 	"piuio::bboutput6",
 	"piuio::bboutput7",
 };
+#endif /* CONFIG_LEDS_CLASS */
+
+/**
+ * struct piuio_devtype - parameters for different types of PIUIO devices
+ * @led_names:	Array of LED names, of length @outputs, to use in sysfs
+ * @inputs:	Number of input pins
+ * @outputs:	Number of output pins
+ * @mplex:	Number of sets of inputs
+ * @mplex_bits:	Number of output bits reserved for multiplexing
+ */
+struct piuio_devtype {
+#ifdef CONFIG_LEDS_CLASS
+	const char **led_names;
+#endif
+	int inputs;
+	int outputs;
+	int mplex;
+	int mplex_bits;
+};
+
+/**
+ * struct piuio - state of each attached PIUIO
+ * @type:       Type of PIUIO device (currently either full or buttonboard)
+ * @idev:       Input device associated with this PIUIO
+ * @phys:       Physical path of the device. @idev's phys field points to this
+ *              buffer
+ * @udev:       USB device associated with this PIUIO
+ * @in:         URB for requesting the current state of one set of inputs
+ * @out:        URB for sending data to outputs and multiplexer
+ * @cr_in:      Setup packet for @in URB
+ * @cr_out:     Setup packet for @out URB
+ * @old_inputs: Previous state of input pins from the @in URB for each of the
+ *              input sets.  These are used to determine when a press or release
+ *              has happened for a group of correlated inputs.
+ * @inputs:     Buffer for the @in URB
+ * @outputs:    Buffer for the @out URB
+ * @new_outputs:
+ *              Staging for the @outputs buffer
+ * @set:        Current set of inputs to read (0 .. @type->mplex - 1)
+ */
+struct piuio {
+	struct piuio_devtype *type;
+
+	struct input_dev *idev;
+	char phys[64];
+
+	struct usb_device *udev;
+	struct urb *in, *out;
+	struct usb_ctrlrequest cr_in, cr_out;
+	wait_queue_head_t shutdown_wait;
+
+	unsigned long (*old_inputs)[PIUIO_MSG_LONGS];
+	unsigned long inputs[PIUIO_MSG_LONGS];
+	unsigned char outputs[PIUIO_MSG_SZ];
+	unsigned char new_outputs[PIUIO_MSG_SZ];
+
+#ifdef CONFIG_LEDS_CLASS
+	struct piuio_led *led;
+#endif
+
+	int set;
+};
 
 /* Full device parameters */
 static struct piuio_devtype piuio_dev_full = {
+#ifdef CONFIG_LEDS_CLASS
 	.led_names = led_names,
+#endif
 	.inputs = (PIUIO_NUM_BTNS < 48) ? PIUIO_NUM_BTNS : 48,
 	.outputs = 48,
 	.mplex = 4,
@@ -184,7 +192,9 @@ static struct piuio_devtype piuio_dev_full = {
 
 /* Button board device parameters */
 static struct piuio_devtype piuio_dev_bb = {
+#ifdef CONFIG_LEDS_CLASS
 	.led_names = bbled_names,
+#endif
 	.inputs = (PIUIO_NUM_BTNS < 8) ? PIUIO_NUM_BTNS : 8,
 	.outputs = 8,
 	.mplex = 1,
@@ -350,29 +360,6 @@ static void piuio_close(struct input_dev *idev)
 
 
 /*
- * Led device event
- */
-static void piuio_led_set(struct led_classdev *dev, enum led_brightness b)
-{
-	struct piuio_led *led = container_of(dev, struct piuio_led, dev);
-	struct piuio *piu = led->piu;
-	int n;
-
-	n = led - piu->led;
-	if (n > piu->type->outputs) {
-		dev_err(&piu->udev->dev, "piuio led: bad number %d\n", n);
-		return;
-	}
-
-	/* Meh, forget atomicity, these aren't super-important */
-	if (b)
-		__set_bit(n, (unsigned long *) piu->new_outputs);
-	else
-		__clear_bit(n, (unsigned long *) piu->new_outputs);
-}
-
-
-/*
  * Structure initialization and destruction
  */
 static void piuio_input_init(struct piuio *piu, struct device *parent)
@@ -409,6 +396,30 @@ static void piuio_input_init(struct piuio *piu, struct device *parent)
 
 	/* Link input device back to PIUIO */
 	input_set_drvdata(idev, piu);
+}
+
+
+#ifdef CONFIG_LEDS_CLASS
+/*
+ * Led device event
+ */
+static void piuio_led_set(struct led_classdev *dev, enum led_brightness b)
+{
+	struct piuio_led *led = container_of(dev, struct piuio_led, dev);
+	struct piuio *piu = led->piu;
+	int n;
+
+	n = led - piu->led;
+	if (n > piu->type->outputs) {
+		dev_err(&piu->udev->dev, "piuio led: bad number %d\n", n);
+		return;
+	}
+
+	/* Meh, forget atomicity, these aren't super-important */
+	if (b)
+		__set_bit(n, (unsigned long *) piu->new_outputs);
+	else
+		__clear_bit(n, (unsigned long *) piu->new_outputs);
 }
 
 static int piuio_leds_init(struct piuio *piu)
@@ -450,6 +461,11 @@ static void piuio_leds_destroy(struct piuio *piu)
 		led_classdev_unregister(&piu->led[i].dev);
 	kfree(piu->led);
 }
+#else /* CONFIG_LEDS_CLASS */
+static int piuio_leds_init(struct piuio *piu) { return 0; }
+static void piuio_leds_destroy(struct piuio *piu) { }
+#endif /* CONFIG_LEDS_CLASS */
+
 
 static int piuio_init(struct piuio *piu, struct input_dev *idev,
 		struct usb_device *udev)
@@ -517,7 +533,7 @@ static void piuio_destroy(struct piuio *piu)
  * USB connect and disconnect events
  */
 static int piuio_probe(struct usb_interface *intf,
-			 const struct usb_device_id *id)
+		const struct usb_device_id *id)
 {
 	struct piuio *piu;
 	struct usb_device *udev = interface_to_usbdev(intf);
