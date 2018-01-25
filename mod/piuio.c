@@ -232,11 +232,10 @@ static void piuio_in_cb(struct urb *urb)
 		goto resubmit;
 	}
 
-	/* Get the index of the previous input set (always 0 if no multiplexer) */
+	/* Get index of the previous input set (always 0 if no multiplexer) */
 	cur_set = (piu->set + piu->type->mplex - 1) % piu->type->mplex;
 
-	/* Note what has changed in this input set, then store the inputs for
-	 * next time */
+	/* Note what has changed in this input set, then save for next time */
 	for (i = 0; i < PIUIO_MSG_LONGS; i++) {
 		changed[i] = piu->inputs[i] ^ piu->old_inputs[cur_set][i];
 		piu->old_inputs[cur_set][i] = piu->inputs[i];
@@ -244,7 +243,8 @@ static void piuio_in_cb(struct urb *urb)
 
 	/* If we are using a multiplexer, changes only count when none of the
 	 * corresponding inputs in other sets are pressed.  Since "pressed"
-	 * reads as 0, we can use & to knock those bits out of the changes. */
+	 * reads as 0, we can use & to knock those bits out of the changes.
+	 */
 	for (s = 0; s < piu->type->mplex; s++) {
 		if (s == cur_set)
 			continue;
@@ -253,10 +253,12 @@ static void piuio_in_cb(struct urb *urb)
 	}
 
 	/* For each input which has changed state, report whether it was pressed
-	 * or released based on the current value. */
+	 * or released based on the current value.
+	 */
 	for_each_set_bit(b, changed, piu->type->inputs) {
 		input_event(piu->idev, EV_MSC, MSC_SCAN, b + 1);
-		input_report_key(piu->idev, keycode(b), !test_bit(b, piu->inputs));
+		input_report_key(piu->idev, keycode(b),
+				!test_bit(b, piu->inputs));
 	}
 
 	/* Done reporting input events */
@@ -265,9 +267,9 @@ static void piuio_in_cb(struct urb *urb)
 resubmit:
 	ret = usb_submit_urb(urb, GFP_ATOMIC);
 	if (ret == -EPERM)
-		dev_info(&piu->udev->dev, "piuio resubmit(in): shutdown\n");
+		dev_info(&piu->udev->dev, "piuio resubmit in: shutdown\n");
 	else if (ret)
-		dev_err(&piu->udev->dev, "piuio resubmit(in): error %d\n", ret);
+		dev_err(&piu->udev->dev, "piuio resubmit in: error %d\n", ret);
 
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
@@ -286,8 +288,7 @@ static void piuio_out_cb(struct urb *urb)
 	/* Copy in the new outputs */
 	memcpy(piu->outputs, piu->new_outputs, PIUIO_MSG_SZ);
 
-	/* If we have a multiplexer, switch to the next input set in rotation
-	 * and set the appropriate output bits */
+	/* Rotate input set if multiplexing */
 	piu->set = (piu->set + 1) % piu->type->mplex;
 
 	/* Set multiplexer bits */
@@ -295,13 +296,13 @@ static void piuio_out_cb(struct urb *urb)
 	piu->outputs[0] |= piu->set;
 	piu->outputs[2] &= ~((1 << piu->type->mplex_bits) - 1);
 	piu->outputs[2] |= piu->set;
-	
+
 resubmit:
 	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
 	if (ret == -EPERM)
-		dev_info(&piu->udev->dev, "piuio resubmit(out): shutdown\n");
+		dev_info(&piu->udev->dev, "piuio resubmit out: shutdown\n");
 	else if (ret)
-		dev_err(&piu->udev->dev, "piuio resubmit(out): error %d\n", ret);
+		dev_err(&piu->udev->dev, "piuio resubmit out: error %d\n", ret);
 
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
@@ -375,7 +376,8 @@ static void piuio_input_init(struct piuio *piu, struct device *parent)
 
 	/* HACK: Buttons are sufficient to trigger a /dev/input/js* device, but
 	 * for systemd (and consequently udev and Xorg) to consider us a
-	 * joystick, we have to have a set of XY absolute axes. */
+	 * joystick, we have to have a set of XY absolute axes.
+	 */
 	set_bit(EV_KEY, idev->evbit);
 	set_bit(EV_ABS, idev->evbit);
 
@@ -457,6 +459,7 @@ out_unregister:
 static void piuio_leds_destroy(struct piuio *piu)
 {
 	int i;
+
 	for (i = 0; i < piu->type->outputs; i++)
 		led_classdev_unregister(&piu->led[i].dev);
 	kfree(piu->led);
@@ -471,7 +474,8 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 		struct usb_device *udev)
 {
 	/* Note: if this function returns an error, piuio_destroy will still be
-	 * called, so we don't need to clean up here */
+	 * called, so we don't need to clean up here
+	 */
 
 	/* Allocate USB request blocks */
 	piu->in = usb_alloc_urb(0, GFP_KERNEL);
@@ -497,7 +501,8 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	strlcat(piu->phys, "/input0", sizeof(piu->phys));
 
 	/* Prepare URB for multiplexer and outputs */
-	piu->cr_out.bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
+	piu->cr_out.bRequestType = USB_DIR_OUT | USB_TYPE_VENDOR |
+		USB_RECIP_DEVICE;
 	piu->cr_out.bRequest = cpu_to_le16(PIUIO_MSG_REQ);
 	piu->cr_out.wValue = cpu_to_le16(PIUIO_MSG_VAL);
 	piu->cr_out.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
@@ -507,7 +512,8 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 			piuio_out_cb, piu);
 
 	/* Prepare URB for inputs */
-	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
+	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR |
+		USB_RECIP_DEVICE;
 	piu->cr_in.bRequest = cpu_to_le16(PIUIO_MSG_REQ);
 	piu->cr_in.wValue = cpu_to_le16(PIUIO_MSG_VAL);
 	piu->cr_in.wIndex = cpu_to_le16(PIUIO_MSG_IDX);
@@ -521,8 +527,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 
 static void piuio_destroy(struct piuio *piu)
 {
-	/* These handle NULL gracefully, so we can call this to clean up if init
-	 * fails */
+	/* Handles NULL gracefully - can be used to clean up if init fails */
 	kfree(piu->old_inputs);
 	usb_free_urb(piu->out);
 	usb_free_urb(piu->in);
