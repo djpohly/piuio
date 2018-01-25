@@ -1,14 +1,9 @@
-/*
- * PIUIO interface driver
- *
- * Copyright (C) 2012-2014 Devin J. Pohly (djpohly+linux@gmail.com)
- *
- *	This program is free software; you can redistribute it and/or
- *	modify it under the terms of the GNU General Public License as
- *	published by the Free Software Foundation, version 2.
- *
- * This code is based on the Linux USB HID keyboard driver by Vojtech Pavlik.
- */
+// SPDX-License-Identifier: GPL-2.0
+//
+// Andamiro PIU IO input module, for use with the PIUIO input/output boards
+// commonly found in arcade dance cabinets.
+//
+// Copyright (c) 2012-2018 Devin J. Pohly (djpohly@gmail.com)
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -640,6 +635,6 @@ static struct usb_driver piuio_driver = {
 MODULE_AUTHOR("Devin J. Pohly");
 MODULE_DESCRIPTION("PIUIO input/output driver");
 MODULE_VERSION("1.0");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL v2");
 
 module_usb_driver(piuio_driver);
