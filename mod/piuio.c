@@ -218,17 +218,18 @@ static int keycode(unsigned int pin)
 /*
  * URB completion handlers
  */
-static void piuio_in_cb(struct urb *urb)
+static void piuio_in_completed(struct urb *urb)
 {
 	struct piuio *piu = urb->context;
 	unsigned long changed[PIUIO_MSG_LONGS];
 	unsigned long b;
 	int i, s;
 	int cur_set;
-	int ret = urb->status;
+	int error = urb->status;
 
-	if (ret) {
-		dev_warn(&piu->udev->dev, "piuio_in_cb: error %d\n", ret);
+	if (error) {
+		dev_warn(&piu->udev->dev, "piuio completed(in): error %d\n",
+				error);
 		goto resubmit;
 	}
 
@@ -265,24 +266,26 @@ static void piuio_in_cb(struct urb *urb)
 	input_sync(piu->idev);
 
 resubmit:
-	ret = usb_submit_urb(urb, GFP_ATOMIC);
-	if (ret == -EPERM)
-		dev_info(&piu->udev->dev, "piuio resubmit in: shutdown\n");
-	else if (ret)
-		dev_err(&piu->udev->dev, "piuio resubmit in: error %d\n", ret);
+	error = usb_submit_urb(urb, GFP_ATOMIC);
+	if (error == -EPERM)
+		dev_info(&piu->udev->dev, "piuio resubmit(in): shutdown\n");
+	else if (error)
+		dev_err(&piu->udev->dev, "piuio resubmit(in): error %d\n",
+				error);
 
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
 }
 
-static void piuio_out_cb(struct urb *urb)
+static void piuio_out_completed(struct urb *urb)
 {
 	struct piuio *piu = urb->context;
 	int mpmask = GENMASK(piu->type->mplex_bits - 1, 0);
-	int ret = urb->status;
+	int error = urb->status;
 
-	if (ret) {
-		dev_warn(&piu->udev->dev, "piuio_out_cb: error %d\n", ret);
+	if (error) {
+		dev_warn(&piu->udev->dev, "piuio completed(out): error %d\n",
+				error);
 		goto resubmit;
 	}
 
@@ -299,11 +302,12 @@ static void piuio_out_cb(struct urb *urb)
 	piu->outputs[2] |= piu->set;
 
 resubmit:
-	ret = usb_submit_urb(piu->out, GFP_ATOMIC);
-	if (ret == -EPERM)
-		dev_info(&piu->udev->dev, "piuio resubmit out: shutdown\n");
-	else if (ret)
-		dev_err(&piu->udev->dev, "piuio resubmit out: error %d\n", ret);
+	error = usb_submit_urb(piu->out, GFP_ATOMIC);
+	if (error == -EPERM)
+		dev_info(&piu->udev->dev, "piuio resubmit(out): shutdown\n");
+	else if (error)
+		dev_err(&piu->udev->dev, "piuio resubmit(out): error %d\n",
+				error);
 
 	/* Let any waiting threads know we're done here */
 	wake_up(&piu->shutdown_wait);
@@ -316,18 +320,19 @@ resubmit:
 static int piuio_open(struct input_dev *idev)
 {
 	struct piuio *piu = input_get_drvdata(idev);
-	int ret;
+	int error;
 
 	/* Kick off the polling */
-	ret = usb_submit_urb(piu->out, GFP_KERNEL);
-	if (ret) {
-		dev_err(&piu->udev->dev, "piuio submit(out): error %d\n", ret);
+	error = usb_submit_urb(piu->out, GFP_KERNEL);
+	if (error) {
+		dev_err(&piu->udev->dev, "piuio submit(out): error %d\n",
+				error);
 		return -EIO;
 	}
 
-	ret = usb_submit_urb(piu->in, GFP_KERNEL);
-	if (ret) {
-		dev_err(&piu->udev->dev, "piuio submit(in): error %d\n", ret);
+	error = usb_submit_urb(piu->in, GFP_KERNEL);
+	if (error) {
+		dev_err(&piu->udev->dev, "piuio submit(in): error %d\n", error);
 		usb_kill_urb(piu->out);
 		return -EIO;
 	}
@@ -422,9 +427,10 @@ static void piuio_led_set(struct led_classdev *dev, enum led_brightness b)
 static int piuio_leds_init(struct piuio *piu)
 {
 	int i;
-	int ret;
+	int error;
 
-	piu->led = kcalloc(piu->type->outputs, sizeof(*piu->led), GFP_KERNEL);
+	piu->led = devm_kcalloc(&piu->udev->dev,
+			piu->type->outputs, sizeof(*piu->led), GFP_KERNEL);
 	if (!piu->led)
 		return -ENOMEM;
 
@@ -435,31 +441,16 @@ static int piuio_leds_init(struct piuio *piu)
 		piu->led[i].piu = piu;
 
 		/* Register led device */
-		ret = led_classdev_register(&piu->udev->dev, &piu->led[i].dev);
-		if (ret)
-			goto out_unregister;
+		error = devm_led_classdev_register(&piu->udev->dev,
+				&piu->led[i].dev);
+		if (error)
+			return error;
 	}
 
 	return 0;
-
-out_unregister:
-	for (--i; i >= 0; i--)
-		led_classdev_unregister(&piu->led[i].dev);
-	kfree(piu->led);
-	return ret;
-}
-
-static void piuio_leds_destroy(struct piuio *piu)
-{
-	int i;
-
-	for (i = 0; i < piu->type->outputs; i++)
-		led_classdev_unregister(&piu->led[i].dev);
-	kfree(piu->led);
 }
 #else /* CONFIG_LEDS_CLASS */
 static int piuio_leds_init(struct piuio *piu) { return 0; }
-static void piuio_leds_destroy(struct piuio *piu) { }
 #endif /* CONFIG_LEDS_CLASS */
 
 
@@ -477,8 +468,8 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 		return -ENOMEM;
 
 	/* Create dynamically allocated arrays */
-	piu->old_inputs = kcalloc(piu->type->mplex, sizeof(*piu->old_inputs),
-		GFP_KERNEL);
+	piu->old_inputs = devm_kcalloc(&piu->udev->dev,
+			piu->type->mplex, sizeof(*piu->old_inputs), GFP_KERNEL);
 	if (!piu->old_inputs)
 		return -ENOMEM;
 
@@ -498,7 +489,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	piu->cr_out.wLength = cpu_to_le16(PIUIO_MSG_SZ);
 	usb_fill_control_urb(piu->out, udev, usb_sndctrlpipe(udev, 0),
 			(void *) &piu->cr_out, piu->outputs, PIUIO_MSG_SZ,
-			piuio_out_cb, piu);
+			piuio_out_completed, piu);
 
 	/* Prepare URB for inputs */
 	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR |
@@ -509,7 +500,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	piu->cr_in.wLength = cpu_to_le16(PIUIO_MSG_SZ);
 	usb_fill_control_urb(piu->in, udev, usb_rcvctrlpipe(udev, 0),
 			(void *) &piu->cr_in, piu->inputs, PIUIO_MSG_SZ,
-			piuio_in_cb, piu);
+			piuio_in_completed, piu);
 
 	return 0;
 }
@@ -517,7 +508,6 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 static void piuio_destroy(struct piuio *piu)
 {
 	/* Handles NULL gracefully - can be used to clean up if init fails */
-	kfree(piu->old_inputs);
 	usb_free_urb(piu->out);
 	usb_free_urb(piu->in);
 }
@@ -532,10 +522,10 @@ static int piuio_probe(struct usb_interface *intf,
 	struct piuio *piu;
 	struct usb_device *udev = interface_to_usbdev(intf);
 	struct input_dev *idev;
-	int ret;
+	int error;
 
 	/* Allocate PIUIO state and determine device type */
-	piu = kzalloc(sizeof(*piu), GFP_KERNEL);
+	piu = devm_kzalloc(&udev->dev, sizeof(*piu), GFP_KERNEL);
 	if (!piu)
 		return -ENOMEM;
 
@@ -549,30 +539,27 @@ static int piuio_probe(struct usb_interface *intf,
 	}
 
 	/* Allocate input device for generating buttonpresses */
-	idev = input_allocate_device();
+	idev = devm_input_allocate_device(&udev->dev);
 	if (!idev) {
-		kfree(piu->old_inputs);
-		kfree(piu);
 		return -ENOMEM;
 	}
 
 	/* Initialize PIUIO state and input device */
-	ret = piuio_init(piu, idev, udev);
-	if (ret)
+	error = piuio_init(piu, idev, udev);
+	if (error)
 		goto err;
 
 	piuio_input_init(piu, &intf->dev);
 
 	/* Initialize and register led devices */
-	ret = piuio_leds_init(piu);
-	if (ret)
+	error = piuio_leds_init(piu);
+	if (error)
 		goto err;
 
 	/* Register input device */
-	ret = input_register_device(piu->idev);
-	if (ret) {
-		dev_err(&intf->dev, "piuio probe: failed to register input dev\n");
-		piuio_leds_destroy(piu);
+	error = input_register_device(piu->idev);
+	if (error) {
+		dev_err(&intf->dev, "piuio: failed to register input dev\n");
 		goto err;
 	}
 
@@ -582,9 +569,7 @@ static int piuio_probe(struct usb_interface *intf,
 
 err:
 	piuio_destroy(piu);
-	input_free_device(idev);
-	kfree(piu);
-	return ret;
+	return error;
 }
 
 static void piuio_disconnect(struct usb_interface *intf)
@@ -599,10 +584,8 @@ static void piuio_disconnect(struct usb_interface *intf)
 
 	usb_kill_urb(piu->in);
 	usb_kill_urb(piu->out);
-	piuio_leds_destroy(piu);
 	input_unregister_device(piu->idev);
 	piuio_destroy(piu);
-	kfree(piu);
 }
 
 
