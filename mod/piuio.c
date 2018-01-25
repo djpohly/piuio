@@ -218,7 +218,7 @@ static int keycode(unsigned int pin)
 /*
  * URB completion handlers
  */
-static void piuio_in_completed(struct urb *urb)
+static void piuio_in_cb(struct urb *urb)
 {
 	struct piuio *piu = urb->context;
 	unsigned long changed[PIUIO_MSG_LONGS];
@@ -228,7 +228,7 @@ static void piuio_in_completed(struct urb *urb)
 	int ret = urb->status;
 
 	if (ret) {
-		dev_warn(&piu->udev->dev, "piuio callback(in): error %d\n", ret);
+		dev_warn(&piu->udev->dev, "piuio_in_cb: error %d\n", ret);
 		goto resubmit;
 	}
 
@@ -273,13 +273,13 @@ resubmit:
 	wake_up(&piu->shutdown_wait);
 }
 
-static void piuio_out_completed(struct urb *urb)
+static void piuio_out_cb(struct urb *urb)
 {
 	struct piuio *piu = urb->context;
 	int ret = urb->status;
 
 	if (ret) {
-		dev_warn(&piu->udev->dev, "piuio callback(out): error %d\n", ret);
+		dev_warn(&piu->udev->dev, "piuio_out_cb: error %d\n", ret);
 		goto resubmit;
 	}
 
@@ -504,7 +504,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	piu->cr_out.wLength = cpu_to_le16(PIUIO_MSG_SZ);
 	usb_fill_control_urb(piu->out, udev, usb_sndctrlpipe(udev, 0),
 			(void *) &piu->cr_out, piu->outputs, PIUIO_MSG_SZ,
-			piuio_out_completed, piu);
+			piuio_out_cb, piu);
 
 	/* Prepare URB for inputs */
 	piu->cr_in.bRequestType = USB_DIR_IN | USB_TYPE_VENDOR | USB_RECIP_DEVICE;
@@ -514,7 +514,7 @@ static int piuio_init(struct piuio *piu, struct input_dev *idev,
 	piu->cr_in.wLength = cpu_to_le16(PIUIO_MSG_SZ);
 	usb_fill_control_urb(piu->in, udev, usb_rcvctrlpipe(udev, 0),
 			(void *) &piu->cr_in, piu->inputs, PIUIO_MSG_SZ,
-			piuio_in_completed, piu);
+			piuio_in_cb, piu);
 
 	return 0;
 }
