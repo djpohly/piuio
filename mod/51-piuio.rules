@@ -1,0 +1,7 @@
+# Install this file as /etc/udev/rules.d/51-piuio.rules
+
+# Allow any user to read/write PIUIO outputs
+SUBSYSTEM=="leds", KERNEL=="piuio::*", RUN+="/bin/chmod 666 /sys/%p/brightness"
+
+# You can do something like this instead to restrict write access to a particular user group:
+#SUBSYSTEM=="leds", KERNEL=="piuio::*", RUN+="/bin/chgrp input /sys/%p/brightness", RUN+="/bin/chmod 664 /sys/%p/brightness"

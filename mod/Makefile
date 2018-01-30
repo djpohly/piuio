@@ -21,7 +21,8 @@ export INSTALL_MOD_DIR
 
 all: modules ;
 
-install: modules_install ;
+install: modules_install
+	install -Dm644 51-piuio.rules $(DESTDIR)/etc/udev/rules.d/51-piuio.rules
 
 %:
 	$(MAKE) -C $(KDIR) M=$(shell pwd) $@
