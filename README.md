@@ -22,6 +22,16 @@ which to install (e.g. for packaging), you can specify a `DESTDIR`:
 
     make DESTDIR="$pkgdir" install
 
+Note: during this step, you may see the following error:
+
+    At main.c:160:
+    - SSL error:02001002:system library:fopen:No such file or directory: crypto/bio/bss_file.c:72
+    - SSL error:2006D080:BIO routines:BIO_new_file:no such file: crypto/bio/bss_file.c:79
+    sign-file: certs/signing_key.pem: No such file or directory
+
+Unless you are trying to build a cryptographically signed module, you may
+safely ignore these messages.
+
 
 Tools for testing
 -----------------
