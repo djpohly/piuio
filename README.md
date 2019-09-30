@@ -45,6 +45,19 @@ to the `brightness` file in a given led directory:
     echo 1 > /sys/class/leds/piuio::output3/brightness
 
 
+Troubleshooting
+---------------
+
+### PIUIO does not load on boot ###
+
+If PIUIO was installed via `make` as in the installation section, it should
+automatically be loaded on boot. PIUIO unloads if it cannot communicate with the
+arcade I/O board, so its absence may be a sign that something is wrong there
+(it's not connected to the computer, there's an issue with the power supply,
+etc.)  You can load PIUIO after boot with `insmod` or `modprobe`:
+
+    insmod /path/to/piuio.ko
+
 Implementation and accuracy
 ---------------------------
 
