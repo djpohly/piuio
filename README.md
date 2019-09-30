@@ -38,12 +38,21 @@ Tools for testing
 
 Since this module uses the input subsystem, you can use standard tools such as
 [evemu](http://cgit.freedesktop.org/evemu/) to test it.  Outputs are
-implemented using the leds subsystem and are consequently located in the
+implemented using the LED subsystem and are consequently located in the
 `/sys/class/leds` directory.  You can test these by echoing zero/nonzero values
 to the `brightness` file in a given led directory:
 
     echo 1 > /sys/class/leds/piuio::output3/brightness
 
+Note that for LEDs to update, there must be an active reader of the joystick
+(pad) input device, otherwise changes made to the LED pseudofiles will not
+affect a cab's lighting until the pads are next read from. That is, you may
+want to run something like this in another terminal when testing:
+
+    cat /dev/input/js0
+
+This will output binary garbage on every button / pad press, but will allow
+LEDs to update.
 
 Implementation and accuracy
 ---------------------------
