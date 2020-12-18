@@ -436,13 +436,12 @@ static int piuio_leds_init(struct piuio *piu)
 
 		/* Relax permissions on led attributes */
 		for (ag = piu->led[i].dev.dev->class->dev_groups; *ag; ag++) {
-			for (attr = (*ag)->attrs; *attr; attr++) {
-				ret = sysfs_chmod_file(&piu->led[i].dev.dev->kobj,
+			attr = (*piu->led[i].dev.dev->class->dev_groups)->attrs;
+			ret = sysfs_chmod_file(&piu->led[i].dev.dev->kobj,
 						*attr, S_IRUGO | S_IWUGO);
-				if (ret) {
-					led_classdev_unregister(&piu->led[i].dev);
-					goto out_unregister;
-				}
+			if (ret) {
+				led_classdev_unregister(&piu->led[i].dev);
+				goto out_unregister;
 			}
 		}
 	}
